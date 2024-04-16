@@ -75,7 +75,6 @@ class CartesiaTTS:
     To enable interrupt handling along the websocket, set `experimental_ws_handle_interrupts=True`.
 
     Examples:
-
         >>> client = CartesiaTTS()
 
         # Load available voices and their metadata (excluding the embeddings).
@@ -97,14 +96,13 @@ class CartesiaTTS:
     """
 
     def __init__(self, *, api_key: str = None, experimental_ws_handle_interrupts: bool = False):
-        """
-        Args:
-            api_key: The API key to use for authorization.
-                If not specified, the API key will be read from the environment variable
-                `CARTESIA_API_KEY`.
-            experimental_ws_handle_interrupts: Whether to handle interrupts when generating
-                audio using the websocket. This is an experimental feature and may have bugs
-                or be deprecated in the future.
+        """Args:
+        api_key: The API key to use for authorization.
+            If not specified, the API key will be read from the environment variable
+            `CARTESIA_API_KEY`.
+        experimental_ws_handle_interrupts: Whether to handle interrupts when generating
+            audio using the websocket. This is an experimental feature and may have bugs
+            or be deprecated in the future.
         """
         self.base_url = os.environ.get("CARTESIA_BASE_URL", DEFAULT_BASE_URL)
         self.api_key = api_key or os.environ.get("CARTESIA_API_KEY")
@@ -245,9 +243,10 @@ class CartesiaTTS:
         duration: int = None,
         chunk_time: float = None,
     ) -> Dict[str, Any]:
-        """
-        Create the request body for a stream request.
-        Note that anything that's not provided will use a default if available or be filtered out otherwise.
+        """Create the request body for a stream request.
+
+        Note that anything that's not provided will use a default if available or be
+        filtered out otherwise.
         """
         body = dict(transcript=transcript, model_id=DEFAULT_MODEL_ID, voice=voice)
 
@@ -457,6 +456,7 @@ class AsyncCartesiaTTS(CartesiaTTS):
     ) -> Union[AudioOutput, AsyncGenerator[AudioOutput, None]]:
         """Asynchronously generate audio from a transcript.
         NOTE: This overrides the non-asynchronous generate method from the base class.
+
         Args:
             transcript (str): The text to generate audio for.
             voice (Embedding (List[float])): The voice to use for generating audio.

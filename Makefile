@@ -5,16 +5,11 @@ install-dev:
 	pip install -e .
 	pip install pytest pytest-cov
 
-
 autoformat:
-	black .
-	isort --atomic .
-	docformatter --in-place --recursive --black .
+	ruff .
 
 lint:
-	isort -c .
-	black . --check
-	flake8 .
+	ruff check .
 
 test:
 	pytest -ra tests/ --cov=cartesia/

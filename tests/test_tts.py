@@ -1,20 +1,20 @@
 """Test against the production Cartesia TTS API.
 
-This test suite tries to be as general as possible because different keys
-will lead to different results. Therefore, we cannot test for complete correctness
-but rather for general correctness.
+This test suite tries to be as general as possible because different keys will lead to
+different results. Therefore, we cannot test for complete correctness but rather for
+general correctness.
 """
 
 import os
 import sys
 import uuid
+from cartesia.tts import DEFAULT_MODEL_ID, AsyncCartesiaTTS, CartesiaTTS, VoiceMetadata
 from typing import AsyncGenerator, Dict, Generator, List
 
 import pytest
 
 THISDIR = os.path.dirname(__file__)
 sys.path.insert(0, os.path.dirname(THISDIR))
-from cartesia.tts import DEFAULT_MODEL_ID, AsyncCartesiaTTS, CartesiaTTS, VoiceMetadata
 
 SAMPLE_VOICE = "Milo"
 
