@@ -12,4 +12,4 @@ lint:
 	ruff check .
 
 test:
-	pytest -ra tests/ --cov=cartesia/
+	pytest -ra tests/ -sv --cov=cartesia/ --log-cli-level=INFO

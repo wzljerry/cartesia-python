@@ -8,8 +8,11 @@ from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple, 
 
 import aiohttp
 import httpx
+import logging
 import requests
 from websockets.sync.client import connect
+
+from cartesia.utils import retry_on_connection_error
 
 DEFAULT_MODEL_ID = "genial-planet-1346"
 DEFAULT_BASE_URL = "api.cartesia.ai"
@@ -17,6 +20,10 @@ DEFAULT_API_VERSION = "v0"
 DEFAULT_TIMEOUT = 60  # seconds
 DEFAULT_NUM_CONNECTIONS = 10  # connections per client
 
+BACKOFF_FACTOR = 1
+MAX_RETRIES = 3
+
+logger = logging.getLogger(__name__)
 
 class AudioOutput(TypedDict):
     audio: bytes
@@ -159,6 +166,7 @@ class CartesiaTTS:
                 voice["embedding"] = json.loads(voice["embedding"])
         return {voice["name"]: voice for voice in voices}
 
+    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
     def get_voice_embedding(
         self, *, voice_id: str = None, filepath: str = None, link: str = None
     ) -> Embedding:
@@ -296,7 +304,7 @@ class CartesiaTTS:
         if websocket:
             generator = self._generate_ws(body)
         else:
-            generator = self._generate_http(body)
+            generator = self._generate_http_wrapper(body)
 
         if stream:
             return generator
@@ -309,6 +317,16 @@ class CartesiaTTS:
             chunks.append(chunk["audio"])
 
         return {"audio": b"".join(chunks), "sampling_rate": sampling_rate}
+
+    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
+    def _generate_http_wrapper(self, body: Dict[str, Any]):
+        """Need to wrap the http generator in a function for the retry decorator to work."""
+        try:
+            for chunk in self._generate_http(body):
+                yield chunk
+        except Exception as e:
+            logger.error(f"Failed to generate audio. {e}")
+            raise e
 
     def _generate_http(self, body: Dict[str, Any]):
         response = requests.post(
@@ -368,8 +386,16 @@ class CartesiaTTS:
             if self.experimental_ws_handle_interrupts:
                 self.websocket.send(json.dumps({"context_id": context_id, "action": "cancel"}))
         except Exception as e:
+            # Close the websocket connection if an error occurs.
+            if self.websocket and not self._is_websocket_closed():
+                self.websocket.close()
             raise RuntimeError(f"Failed to generate audio. {response}") from e
+        finally:
+            # Ensure the websocket is ultimately closed.
+            if self.websocket and not self._is_websocket_closed():
+                self.websocket.close()
 
+    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
     def transcribe(self, raw_audio: Union[bytes, str]) -> str:
         raw_audio_bytes, headers = self.prepare_audio_and_headers(raw_audio)
         response = httpx.post(
@@ -384,6 +410,7 @@ class CartesiaTTS:
 
         transcript = response.json()
         return transcript["text"]
+
 
     def prepare_audio_and_headers(
         self, raw_audio: Union[bytes, str]
@@ -483,7 +510,7 @@ class AsyncCartesiaTTS(CartesiaTTS):
         if websocket:
             generator = self._generate_ws(body)
         else:
-            generator = self._generate_http(body)
+            generator = self._generate_http_wrapper(body)
 
         if stream:
             return generator
@@ -496,6 +523,16 @@ class AsyncCartesiaTTS(CartesiaTTS):
             chunks.append(chunk["audio"])
 
         return {"audio": b"".join(chunks), "sampling_rate": sampling_rate}
+
+    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
+    async def _generate_http_wrapper(self, body: Dict[str, Any]):
+        """Need to wrap the http generator in a function for the retry decorator to work."""
+        try:
+          async for chunk in self._generate_http(body):
+              yield chunk
+        except Exception as e:
+            logger.error(f"Failed to generate audio. {e}")
+            raise e
 
     async def _generate_http(self, body: Dict[str, Any]):
         async with self._session.post(
@@ -549,10 +586,15 @@ class AsyncCartesiaTTS(CartesiaTTS):
             if self.experimental_ws_handle_interrupts:
                 await ws.send_json({"context_id": context_id, "action": "cancel"})
         except Exception as e:
-            print(f"Context ID: {context_id}, Response: {response}")
-            print(f"Error: {e}")
+            if self.websocket and not self._is_websocket_closed():
+                await self.websocket.close()
             raise RuntimeError(f"Failed to generate audio. {await response.text()}") from e
+        finally:
+            # Ensure the websocket is ultimately closed.
+            if self.websocket and not self._is_websocket_closed():
+                await self.websocket.close()
 
+    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
     async def transcribe(self, raw_audio: Union[bytes, str]) -> str:
         raw_audio_bytes, headers = self.prepare_audio_and_headers(raw_audio)
         data = aiohttp.FormData()
