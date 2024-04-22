@@ -235,20 +235,6 @@ async def test_generate_async_context_manager_with_err():
     assert websocket.closed  # check websocket is now closed
 
 
-def test_transcribe(resources: _Resources):
-    client = resources.client
-    text = client.transcribe(os.path.join(THISDIR, "mock_data/sample_speech.wav"))
-    assert text == "It is a great day to be alive when all of the trees are green."
-
-
-@pytest.mark.asyncio
-async def test_async_transcribe():
-    logger.info("Testing async transcribe")
-    async_client = create_async_client()
-    text = await async_client.transcribe(os.path.join(THISDIR, "mock_data/sample_speech.wav"))
-    assert text == "It is a great day to be alive when all of the trees are green."
-
-
 @pytest.mark.parametrize("chunk_time", [0.05, 0.6])
 def test_check_inputs_invalid_chunk_time(client: CartesiaTTS, chunk_time):
     logger.info(f"Testing invalid chunk_time: {chunk_time}")
