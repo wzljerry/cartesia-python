@@ -118,8 +118,9 @@ class UploadCommand(Command):
 
 
 class BumpVersionCommand(Command):
-    """
-    To use: python setup.py bumpversion -v <version>
+    """Bump the version of the package.
+
+    To use: python setup.py bumpversion -v <version>.
 
     This command will push the new version directly and tag it.
 
