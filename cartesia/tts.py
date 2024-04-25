@@ -12,7 +12,7 @@ import logging
 import requests
 from websockets.sync.client import connect
 
-from cartesia.utils import retry_on_connection_error
+from cartesia.utils import retry_on_connection_error, retry_on_connection_error_async
 
 DEFAULT_MODEL_ID = "genial-planet-1346"
 DEFAULT_BASE_URL = "api.cartesia.ai"
@@ -454,22 +454,49 @@ class CartesiaTTS:
 
 class AsyncCartesiaTTS(CartesiaTTS):
     def __init__(self, *, api_key: str = None, experimental_ws_handle_interrupts: bool = False):
-        self.timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
-        self.connector = aiohttp.TCPConnector(limit=DEFAULT_NUM_CONNECTIONS)
-        self._session = aiohttp.ClientSession(timeout=self.timeout, connector=self.connector)
+        self._session = None
+        self._loop = None
         super().__init__(
             api_key=api_key, experimental_ws_handle_interrupts=experimental_ws_handle_interrupts
         )
-
+    
+    async def _get_session(self):
+        current_loop = asyncio.get_event_loop()
+        if self._loop is not current_loop:
+            # If the loop has changed, close the session and create a new one.
+            await self.close()
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
+            connector = aiohttp.TCPConnector(limit=DEFAULT_NUM_CONNECTIONS)
+            self._session = aiohttp.ClientSession(
+                timeout=timeout, connector=connector
+            )
+            self._loop = current_loop
+        return self._session
+    
     async def refresh_websocket(self):
         """Refresh the websocket connection."""
         if self.websocket is None or self._is_websocket_closed():
             route = "audio/websocket"
             if self.experimental_ws_handle_interrupts:
                 route = f"experimental/{route}"
-            self.websocket = await self._session.ws_connect(
+            session = await self._get_session()
+            self.websocket = await session.ws_connect(
                 f"{self._ws_url()}/{route}?api_key={self.api_key}"
             )
+    
+    def _is_websocket_closed(self):
+        return self.websocket.closed
+
+    async def close(self):
+        """This method closes the websocket and the session.
+        
+        It is *strongly* recommended to call this method when you are done using the client.
+        """
+        if self.websocket is not None and not self._is_websocket_closed():
+            await self.websocket.close()
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
 
     async def generate(
         self,
@@ -524,7 +551,7 @@ class AsyncCartesiaTTS(CartesiaTTS):
 
         return {"audio": b"".join(chunks), "sampling_rate": sampling_rate}
 
-    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
+    @retry_on_connection_error_async(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
     async def _generate_http_wrapper(self, body: Dict[str, Any]):
         """Need to wrap the http generator in a function for the retry decorator to work."""
         try:
@@ -535,7 +562,8 @@ class AsyncCartesiaTTS(CartesiaTTS):
             raise e
 
     async def _generate_http(self, body: Dict[str, Any]):
-        async with self._session.post(
+        session = await self._get_session()
+        async with session.post(
             f"{self._http_url()}/audio/stream", data=json.dumps(body), headers=self.headers
         ) as response:
             if not response.ok:
@@ -594,13 +622,13 @@ class AsyncCartesiaTTS(CartesiaTTS):
             if self.websocket and not self._is_websocket_closed():
                 await self.websocket.close()
 
-    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
     async def transcribe(self, raw_audio: Union[bytes, str]) -> str:
         raw_audio_bytes, headers = self.prepare_audio_and_headers(raw_audio)
         data = aiohttp.FormData()
         data.add_field("clip", raw_audio_bytes, filename="input.wav", content_type="audio/wav")
+        session = await self._get_session()
 
-        async with self._session.post(
+        async with session.post(
             f"{self._http_url()}/audio/transcriptions", headers=headers, data=data
         ) as response:
             if not response.ok:
@@ -608,16 +636,7 @@ class AsyncCartesiaTTS(CartesiaTTS):
 
             transcript = await response.json()
             return transcript["text"]
-
-    def _is_websocket_closed(self):
-        return self.websocket.closed
-
-    async def close(self):
-        if self.websocket is not None and not self._is_websocket_closed():
-            await self.websocket.close()
-        if not self._session.closed:
-            await self._session.close()
-
+        
     def __del__(self):
         try:
             loop = asyncio.get_running_loop()
