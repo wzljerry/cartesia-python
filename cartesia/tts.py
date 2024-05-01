@@ -17,7 +17,7 @@ from cartesia.utils import retry_on_connection_error, retry_on_connection_error_
 DEFAULT_MODEL_ID = "genial-planet-1346"
 DEFAULT_BASE_URL = "api.cartesia.ai"
 DEFAULT_API_VERSION = "v0"
-DEFAULT_TIMEOUT = 60  # seconds
+DEFAULT_TIMEOUT = 30  # seconds
 DEFAULT_NUM_CONNECTIONS = 10  # connections per client
 
 BACKOFF_FACTOR = 1
@@ -248,6 +248,7 @@ class CartesiaTTS:
         *,
         transcript: str,
         voice: Embedding,
+        model_id: str,
         duration: int = None,
         chunk_time: float = None,
     ) -> Dict[str, Any]:
@@ -256,7 +257,7 @@ class CartesiaTTS:
         Note that anything that's not provided will use a default if available or be
         filtered out otherwise.
         """
-        body = dict(transcript=transcript, model_id=DEFAULT_MODEL_ID, voice=voice)
+        body = dict(transcript=transcript, model_id=model_id, voice=voice)
 
         optional_body = dict(
             duration=duration,
@@ -271,6 +272,7 @@ class CartesiaTTS:
         *,
         transcript: str,
         voice: Embedding,
+        model_id: str = DEFAULT_MODEL_ID,
         duration: int = None,
         chunk_time: float = None,
         stream: bool = False,
@@ -298,7 +300,11 @@ class CartesiaTTS:
         self._check_inputs(transcript, duration, chunk_time)
 
         body = self._generate_request_body(
-            transcript=transcript, voice=voice, duration=duration, chunk_time=chunk_time
+            transcript=transcript, 
+            voice=voice, 
+            model_id=model_id,
+            duration=duration, 
+            chunk_time=chunk_time
         )
 
         if websocket:
@@ -334,6 +340,7 @@ class CartesiaTTS:
             stream=True,
             data=json.dumps(body),
             headers=self.headers,
+            timeout=(DEFAULT_TIMEOUT, DEFAULT_TIMEOUT),
         )
         if not response.ok:
             raise ValueError(f"Failed to generate audio. {response.text}")
@@ -503,6 +510,7 @@ class AsyncCartesiaTTS(CartesiaTTS):
         *,
         transcript: str,
         voice: Embedding,
+        model_id: str = DEFAULT_MODEL_ID,
         duration: int = None,
         chunk_time: float = None,
         stream: bool = False,
@@ -531,7 +539,11 @@ class AsyncCartesiaTTS(CartesiaTTS):
         self._check_inputs(transcript, duration, chunk_time)
 
         body = self._generate_request_body(
-            transcript=transcript, voice=voice, duration=duration, chunk_time=chunk_time
+            transcript=transcript, 
+            voice=voice,
+            model_id=model_id,
+            duration=duration, 
+            chunk_time=chunk_time
         )
 
         if websocket:

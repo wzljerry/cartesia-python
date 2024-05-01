@@ -95,6 +95,19 @@ def test_generate(resources: _Resources, websocket: bool):
     assert isinstance(output["sampling_rate"], int)
 
 
+def test_generate_with_model_id(resources: _Resources):
+    logger.info("Testing generate with model_id")
+    client = resources.client
+    voices = resources.voices
+    embedding = voices[SAMPLE_VOICE]["embedding"]
+    transcript = "Hello, world!"
+
+    output = client.generate(transcript=transcript, voice=embedding, model_id=DEFAULT_MODEL_ID)
+    assert output.keys() == {"audio", "sampling_rate"}
+    assert isinstance(output["audio"], bytes)
+    assert isinstance(output["sampling_rate"], int)
+
+
 @pytest.mark.parametrize("websocket", [True, False])
 def test_generate_stream(resources: _Resources, websocket: bool):
     logger.info("Testing generate stream")

@@ -21,13 +21,14 @@ client = CartesiaTTS(api_key=os.environ.get("CARTESIA_API_KEY"))
 voices = client.get_voices()
 voice = client.get_voice_embedding(voice_id=voices["Graham"]["id"])
 transcript = "Hello! Welcome to Cartesia"
+model_id = "genial-planet-1346" # (Optional) We'll specify a default if you don't have a specific model in mind
 
 p = pyaudio.PyAudio()
 
 stream = None
 
 # Generate and stream audio
-for output in client.generate(transcript=transcript, voice=voice, stream=True):
+for output in client.generate(transcript=transcript, voice=voice, model_id=model_id, stream=True):
     buffer = output["audio"]
     rate = output["sampling_rate"]
 
@@ -57,13 +58,14 @@ async def write_stream():
     voices = client.get_voices()
     voice = client.get_voice_embedding(voice_id=voices["Graham"]["id"])
     transcript = "Hello! Welcome to Cartesia"
+    model_id = "genial-planet-1346" # (Optional) We'll specify a default if you don't have a specific model in mind
 
     p = pyaudio.PyAudio()
 
     stream = None
 
     # Generate and stream audio
-    async for output in await client.generate(transcript=transcript, voice=voice, stream=True):
+    async for output in await client.generate(transcript=transcript, voice=voice, model_id=model_id, stream=True):
         buffer = output["audio"]
         rate = output["sampling_rate"]
 
