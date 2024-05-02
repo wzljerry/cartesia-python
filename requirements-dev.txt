@@ -1,10 +1,6 @@
 # Development
 # Anchor versions to avoid changes in formatting with new releases.
 # NOTE: These versions should match those in .pre-commit-config.yaml
-pre-commit
-ruff-pre-commit @ git+https://github.com/astral-sh/ruff-pre-commit.git@v0.3.7
-ruff==v0.3.7
-
 pytest>=8.0.2
 pytest-cov>=4.1.0
 twine
