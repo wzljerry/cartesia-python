@@ -3,10 +3,10 @@ name: Publish Python 🐍 distributions 📦 to PyPI
 on:
   push:
     branches: [ main ]
-  paths:
-      # if the version.py changes, we should re-publish
-      # this also allows us to run the workflow manually without skipping.
-      - 'cartesia/version.py'
+    paths:
+        # if the version.py changes, we should re-publish
+        # this also allows us to run the workflow manually without skipping.
+        - 'cartesia/version.py'
   
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
