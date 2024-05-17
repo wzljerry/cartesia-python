@@ -14,7 +14,7 @@ from websockets.sync.client import connect
 
 from cartesia.utils import retry_on_connection_error, retry_on_connection_error_async
 
-DEFAULT_MODEL_ID = "genial-planet-1346"
+DEFAULT_MODEL_ID = ""
 DEFAULT_BASE_URL = "api.cartesia.ai"
 DEFAULT_API_VERSION = "v0"
 DEFAULT_TIMEOUT = 30  # seconds
@@ -160,9 +160,8 @@ class CartesiaTTS:
             raise ValueError(f"Failed to get voices. Error: {response.text}")
 
         voices = response.json()
-        # TODO: Update the API to return the embedding as a list of floats rather than string.
-        if not skip_embeddings:
-            for voice in voices:
+        for voice in voices:
+            if "embedding" in voice and isinstance(voice["embedding"], str):
                 voice["embedding"] = json.loads(voice["embedding"])
         return {voice["name"]: voice for voice in voices}
 
@@ -210,9 +209,10 @@ class CartesiaTTS:
 
         # Handle successful response
         out = response.json()
-        if isinstance(out["embedding"], str):
-            out["embedding"] = json.loads(out["embedding"])
-        return out["embedding"]
+        embedding = out["embedding"]
+        if isinstance(embedding, str):
+            embedding = json.loads(embedding)
+        return embedding
 
     def refresh_websocket(self):
         """Refresh the websocket connection.
@@ -249,6 +249,7 @@ class CartesiaTTS:
         transcript: str,
         voice: Embedding,
         model_id: str,
+        output_format: str,
         duration: int = None,
         chunk_time: float = None,
     ) -> Dict[str, Any]:
@@ -262,6 +263,7 @@ class CartesiaTTS:
         optional_body = dict(
             duration=duration,
             chunk_time=chunk_time,
+            output_format=output_format,
         )
         body.update({k: v for k, v in optional_body.items() if v is not None})
 
@@ -277,6 +279,7 @@ class CartesiaTTS:
         chunk_time: float = None,
         stream: bool = False,
         websocket: bool = True,
+        output_format: str = "fp32",
     ) -> Union[AudioOutput, Generator[AudioOutput, None, None]]:
         """Generate audio from a transcript.
 
@@ -304,7 +307,8 @@ class CartesiaTTS:
             voice=voice, 
             model_id=model_id,
             duration=duration, 
-            chunk_time=chunk_time
+            chunk_time=chunk_time,
+            output_format=output_format,
         )
 
         if websocket:
@@ -336,7 +340,7 @@ class CartesiaTTS:
 
     def _generate_http(self, body: Dict[str, Any]):
         response = requests.post(
-            f"{self._http_url()}/audio/stream",
+            f"{self._http_url()}/audio/sse",
             stream=True,
             data=json.dumps(body),
             headers=self.headers,
@@ -379,6 +383,8 @@ class CartesiaTTS:
         try:
             while True:
                 response = json.loads(self.websocket.recv())
+                if "error" in response:
+                    raise RuntimeError(f"Error generating audio:\n{response['error']}")
                 if response["done"]:
                     break
 
@@ -515,6 +521,7 @@ class AsyncCartesiaTTS(CartesiaTTS):
         chunk_time: float = None,
         stream: bool = False,
         websocket: bool = True,
+        output_format: str = "fp32"
     ) -> Union[AudioOutput, AsyncGenerator[AudioOutput, None]]:
         """Asynchronously generate audio from a transcript.
         NOTE: This overrides the non-asynchronous generate method from the base class.
@@ -543,7 +550,8 @@ class AsyncCartesiaTTS(CartesiaTTS):
             voice=voice,
             model_id=model_id,
             duration=duration, 
-            chunk_time=chunk_time
+            chunk_time=chunk_time,
+            output_format=output_format,
         )
 
         if websocket:
@@ -576,7 +584,7 @@ class AsyncCartesiaTTS(CartesiaTTS):
     async def _generate_http(self, body: Dict[str, Any]):
         session = await self._get_session()
         async with session.post(
-            f"{self._http_url()}/audio/stream", data=json.dumps(body), headers=self.headers
+            f"{self._http_url()}/audio/sse", data=json.dumps(body), headers=self.headers
         ) as response:
             if not response.ok:
                 raise ValueError(f"Failed to generate audio. {await response.text()}")
