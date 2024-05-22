@@ -16,7 +16,7 @@ import pytest
 THISDIR = os.path.dirname(__file__)
 sys.path.insert(0, os.path.dirname(THISDIR))
 
-SAMPLE_VOICE = "Samantha"
+SAMPLE_VOICE = "Abby"
 
 logger = logging.getLogger(__name__)
 

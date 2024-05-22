@@ -79,7 +79,6 @@ class CartesiaTTS:
     and generate speech from text.
 
     The client also supports generating audio using a websocket for lower latency.
-    To enable interrupt handling along the websocket, set `experimental_ws_handle_interrupts=True`.
 
     Examples:
         >>> client = CartesiaTTS()
@@ -102,21 +101,17 @@ class CartesiaTTS:
         ...     audio, sr = audio_chunk["audio"], audio_chunk["sampling_rate"]
     """
 
-    def __init__(self, *, api_key: str = None, experimental_ws_handle_interrupts: bool = False):
+    def __init__(self, *, api_key: str = None):
         """Args:
         api_key: The API key to use for authorization.
             If not specified, the API key will be read from the environment variable
             `CARTESIA_API_KEY`.
-        experimental_ws_handle_interrupts: Whether to handle interrupts when generating
-            audio using the websocket. This is an experimental feature and may have bugs
-            or be deprecated in the future.
         """
         self.base_url = os.environ.get("CARTESIA_BASE_URL", DEFAULT_BASE_URL)
         self.api_key = api_key or os.environ.get("CARTESIA_API_KEY")
         self.api_version = os.environ.get("CARTESIA_API_VERSION", DEFAULT_API_VERSION)
         self.headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
         self.websocket = None
-        self.experimental_ws_handle_interrupts = experimental_ws_handle_interrupts
 
     def get_voices(self, skip_embeddings: bool = True) -> Dict[str, VoiceMetadata]:
         """Returns a mapping from voice name -> voice metadata.
@@ -222,8 +217,6 @@ class CartesiaTTS:
         """
         if self.websocket is None or self._is_websocket_closed():
             route = "audio/websocket"
-            if self.experimental_ws_handle_interrupts:
-                route = f"experimental/{route}"
             self.websocket = connect(f"{self._ws_url()}/{route}?api_key={self.api_key}")
 
     def _is_websocket_closed(self):
@@ -389,15 +382,6 @@ class CartesiaTTS:
                     break
 
                 yield convert_response(response, include_context_id)
-
-                if self.experimental_ws_handle_interrupts:
-                    self.websocket.send(json.dumps({"context_id": context_id}))
-        except GeneratorExit:
-            # The exit is only called when the generator is garbage collected.
-            # It may not be called directly after a break statement.
-            # However, the generator will be automatically cancelled on the next request.
-            if self.experimental_ws_handle_interrupts:
-                self.websocket.send(json.dumps({"context_id": context_id, "action": "cancel"}))
         except Exception as e:
             # Close the websocket connection if an error occurs.
             if self.websocket and not self._is_websocket_closed():
@@ -466,11 +450,11 @@ class CartesiaTTS:
 
 
 class AsyncCartesiaTTS(CartesiaTTS):
-    def __init__(self, *, api_key: str = None, experimental_ws_handle_interrupts: bool = False):
+    def __init__(self, *, api_key: str = None):
         self._session = None
         self._loop = None
         super().__init__(
-            api_key=api_key, experimental_ws_handle_interrupts=experimental_ws_handle_interrupts
+            api_key=api_key
         )
     
     async def _get_session(self):
@@ -491,8 +475,6 @@ class AsyncCartesiaTTS(CartesiaTTS):
         """Refresh the websocket connection."""
         if self.websocket is None or self._is_websocket_closed():
             route = "audio/websocket"
-            if self.experimental_ws_handle_interrupts:
-                route = f"experimental/{route}"
             session = await self._get_session()
             self.websocket = await session.ws_connect(
                 f"{self._ws_url()}/{route}?api_key={self.api_key}"
@@ -605,10 +587,6 @@ class AsyncCartesiaTTS(CartesiaTTS):
 
     async def _generate_ws(self, body: Dict[str, Any], *, context_id: str = None):
         include_context_id = bool(context_id)
-        route = "audio/websocket"
-        if self.experimental_ws_handle_interrupts:
-            route = f"experimental/{route}"
-
         if not self.websocket or self._is_websocket_closed():
             await self.refresh_websocket()
 
@@ -624,15 +602,6 @@ class AsyncCartesiaTTS(CartesiaTTS):
                     break
 
                 yield convert_response(response, include_context_id)
-
-                if self.experimental_ws_handle_interrupts:
-                    await ws.send_json({"context_id": context_id})
-        except GeneratorExit:
-            # The exit is only called when the generator is garbage collected.
-            # It may not be called directly after a break statement.
-            # However, the generator will be automatically cancelled on the next request.
-            if self.experimental_ws_handle_interrupts:
-                await ws.send_json({"context_id": context_id, "action": "cancel"})
         except Exception as e:
             if self.websocket and not self._is_websocket_closed():
                 await self.websocket.close()
