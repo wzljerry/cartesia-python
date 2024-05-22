@@ -4,7 +4,17 @@ import json
 import os
 import uuid
 from types import TracebackType
-from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple, TypedDict, Union
+from typing import (
+    Any,
+    AsyncGenerator,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Tuple,
+    TypedDict,
+    Union,
+)
 
 import aiohttp
 import httpx
@@ -13,6 +23,21 @@ import requests
 from websockets.sync.client import connect
 
 from cartesia.utils import retry_on_connection_error, retry_on_connection_error_async
+from cartesia._types import (
+    AudioDataReturnType,
+    AudioOutputFormat,
+    AudioOutput,
+    Embedding,
+    VoiceMetadata,
+)
+
+try:
+    import numpy as np
+
+    _NUMPY_AVAILABLE = True
+except ImportError:
+    _NUMPY_AVAILABLE = False
+
 
 DEFAULT_MODEL_ID = ""
 DEFAULT_BASE_URL = "api.cartesia.ai"
@@ -24,20 +49,6 @@ BACKOFF_FACTOR = 1
 MAX_RETRIES = 3
 
 logger = logging.getLogger(__name__)
-
-class AudioOutput(TypedDict):
-    audio: bytes
-    sampling_rate: int
-
-
-Embedding = List[float]
-
-
-class VoiceMetadata(TypedDict):
-    id: str
-    name: str
-    description: str
-    embedding: Optional[Embedding]
 
 
 def update_buffer(buffer: str, chunk_bytes: bytes) -> Tuple[str, List[Dict[str, Any]]]:
@@ -160,7 +171,9 @@ class CartesiaTTS:
                 voice["embedding"] = json.loads(voice["embedding"])
         return {voice["name"]: voice for voice in voices}
 
-    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
+    @retry_on_connection_error(
+        max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger
+    )
     def get_voice_embedding(
         self, *, voice_id: str = None, filepath: str = None, link: str = None
     ) -> Embedding:
@@ -223,8 +236,22 @@ class CartesiaTTS:
         return self.websocket.socket.fileno() == -1
 
     def _check_inputs(
-        self, transcript: str, duration: Optional[float], chunk_time: Optional[float]
+        self,
+        transcript: str,
+        duration: Optional[float],
+        chunk_time: Optional[float],
+        output_format: Union[str, AudioOutputFormat],
+        data_rtype: Union[str, AudioDataReturnType],
     ):
+        # This will try the casting and raise an error.
+        _ = AudioOutputFormat(output_format)
+
+        if AudioDataReturnType(data_rtype) == AudioDataReturnType.ARRAY and not _NUMPY_AVAILABLE:
+            raise ImportError(
+                "The 'numpy' package is required to use the 'array' return type. "
+                "Please install 'numpy' or use 'bytes' as the return type."
+            )
+
         if chunk_time is not None:
             if chunk_time < 0.1 or chunk_time > 0.5:
                 raise ValueError("`chunk_time` must be between 0.1 and 0.5")
@@ -242,7 +269,7 @@ class CartesiaTTS:
         transcript: str,
         voice: Embedding,
         model_id: str,
-        output_format: str,
+        output_format: AudioOutputFormat,
         duration: int = None,
         chunk_time: float = None,
     ) -> Dict[str, Any]:
@@ -252,6 +279,7 @@ class CartesiaTTS:
         filtered out otherwise.
         """
         body = dict(transcript=transcript, model_id=model_id, voice=voice)
+        output_format = output_format.value
 
         optional_body = dict(
             duration=duration,
@@ -272,7 +300,8 @@ class CartesiaTTS:
         chunk_time: float = None,
         stream: bool = False,
         websocket: bool = True,
-        output_format: str = "fp32",
+        output_format: Union[str, AudioOutputFormat] = "fp32",
+        data_rtype: str = "bytes",
     ) -> Union[AudioOutput, Generator[AudioOutput, None, None]]:
         """Generate audio from a transcript.
 
@@ -286,6 +315,9 @@ class CartesiaTTS:
                 If True this function returns a generator. False by default.
             websocket (bool, optional): Whether to use a websocket for streaming audio.
                 Using the websocket reduces latency by pre-poning the handshake. True by default.
+            data_rtype: The return type for the 'data' key in the dictionary.
+                One of `'byte' | 'array'`.
+                Note this field is experimental and may be deprecated in the future.
 
         Returns:
             A generator if `stream` is True, otherwise a dictionary.
@@ -293,13 +325,16 @@ class CartesiaTTS:
                 * "audio": The audio as a bytes buffer.
                 * "sampling_rate": The sampling rate of the audio.
         """
-        self._check_inputs(transcript, duration, chunk_time)
+        self._check_inputs(transcript, duration, chunk_time, output_format, data_rtype)
+
+        data_rtype = AudioDataReturnType(data_rtype)
+        output_format = AudioOutputFormat(output_format)
 
         body = self._generate_request_body(
-            transcript=transcript, 
-            voice=voice, 
+            transcript=transcript,
+            voice=voice,
             model_id=model_id,
-            duration=duration, 
+            duration=duration,
             chunk_time=chunk_time,
             output_format=output_format,
         )
@@ -309,6 +344,9 @@ class CartesiaTTS:
         else:
             generator = self._generate_http_wrapper(body)
 
+        generator = self._postprocess_audio(
+            generator, data_rtype=data_rtype, output_format=output_format
+        )
         if stream:
             return generator
 
@@ -319,9 +357,45 @@ class CartesiaTTS:
                 sampling_rate = chunk["sampling_rate"]
             chunks.append(chunk["audio"])
 
-        return {"audio": b"".join(chunks), "sampling_rate": sampling_rate}
+        if data_rtype == AudioDataReturnType.ARRAY:
+            cat = np.concatenate
+        else:
+            cat = b"".join
 
-    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
+        return {"audio": cat(chunks), "sampling_rate": sampling_rate}
+
+    def _postprocess_audio(
+        self,
+        generator: Generator[AudioOutput, None, None],
+        *,
+        data_rtype: AudioDataReturnType,
+        output_format: AudioOutputFormat,
+    ) -> Generator[AudioOutput, None, None]:
+        """Perform postprocessing on the generator outputs.
+
+        The postprocessing should be minimal (e.g. converting to array, casting dtype).
+        This code should not perform heavy operations like changing the sampling rate.
+
+        Args:
+            generator: A generator that yields audio chunks.
+            data_rtype: The data return type.
+            output_format: The output format for the audio.
+
+        Returns:
+            A generator that yields audio chunks.
+        """
+        dtype = None
+        if data_rtype == AudioDataReturnType.ARRAY:
+            dtype = np.float32 if "fp32" in output_format.value else np.int16
+
+        for chunk in generator:
+            if dtype is not None:
+                chunk["audio"] = np.frombuffer(chunk["audio"], dtype=dtype)
+            yield chunk
+
+    @retry_on_connection_error(
+        max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger
+    )
     def _generate_http_wrapper(self, body: Dict[str, Any]):
         """Need to wrap the http generator in a function for the retry decorator to work."""
         try:
@@ -392,23 +466,6 @@ class CartesiaTTS:
             if self.websocket and not self._is_websocket_closed():
                 self.websocket.close()
 
-    @retry_on_connection_error(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
-    def transcribe(self, raw_audio: Union[bytes, str]) -> str:
-        raw_audio_bytes, headers = self.prepare_audio_and_headers(raw_audio)
-        response = httpx.post(
-            f"{self._http_url()}/audio/transcriptions",
-            headers=headers,
-            files={"clip": ("input.wav", raw_audio_bytes)},
-            timeout=DEFAULT_TIMEOUT,
-        )
-
-        if not response.is_success:
-            raise ValueError(f"Failed to transcribe audio. Error: {response.text()}")
-
-        transcript = response.json()
-        return transcript["text"]
-
-
     def prepare_audio_and_headers(
         self, raw_audio: Union[bytes, str]
     ) -> Tuple[bytes, Dict[str, Any]]:
@@ -453,10 +510,8 @@ class AsyncCartesiaTTS(CartesiaTTS):
     def __init__(self, *, api_key: str = None):
         self._session = None
         self._loop = None
-        super().__init__(
-            api_key=api_key
-        )
-    
+        super().__init__(api_key=api_key)
+
     async def _get_session(self):
         current_loop = asyncio.get_event_loop()
         if self._loop is not current_loop:
@@ -465,12 +520,10 @@ class AsyncCartesiaTTS(CartesiaTTS):
         if self._session is None or self._session.closed:
             timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
             connector = aiohttp.TCPConnector(limit=DEFAULT_NUM_CONNECTIONS)
-            self._session = aiohttp.ClientSession(
-                timeout=timeout, connector=connector
-            )
+            self._session = aiohttp.ClientSession(timeout=timeout, connector=connector)
             self._loop = current_loop
         return self._session
-    
+
     async def refresh_websocket(self):
         """Refresh the websocket connection."""
         if self.websocket is None or self._is_websocket_closed():
@@ -479,13 +532,13 @@ class AsyncCartesiaTTS(CartesiaTTS):
             self.websocket = await session.ws_connect(
                 f"{self._ws_url()}/{route}?api_key={self.api_key}"
             )
-    
+
     def _is_websocket_closed(self):
         return self.websocket.closed
 
     async def close(self):
         """This method closes the websocket and the session.
-        
+
         It is *strongly* recommended to call this method when you are done using the client.
         """
         if self.websocket is not None and not self._is_websocket_closed():
@@ -503,35 +556,22 @@ class AsyncCartesiaTTS(CartesiaTTS):
         chunk_time: float = None,
         stream: bool = False,
         websocket: bool = True,
-        output_format: str = "fp32"
+        output_format: Union[str, AudioOutputFormat] = "fp32",
+        data_rtype: Union[str, AudioDataReturnType] = "bytes",
     ) -> Union[AudioOutput, AsyncGenerator[AudioOutput, None]]:
         """Asynchronously generate audio from a transcript.
-        NOTE: This overrides the non-asynchronous generate method from the base class.
 
-        Args:
-            transcript (str): The text to generate audio for.
-            voice (Embedding (List[float])): The voice to use for generating audio.
-            duration (int, optional): The maximum duration of the audio in seconds.
-            chunk_time (float, optional): How long each audio segment should be in seconds.
-                This should not need to be adjusted.
-            stream (bool, optional): Whether to stream the audio or not.
-                If True this function returns a generator. False by default.
-            websocket (bool, optional): Whether to use a websocket for streaming audio.
-                Using the websocket reduces latency by pre-poning the handshake. True by default.
-
-        Returns:
-            A generator if `stream` is True, otherwise a dictionary.
-            Dictionary from both generator and non-generator return types have the following keys:
-                * "audio": The audio as a bytes buffer.
-                * "sampling_rate": The sampling rate of the audio.
+        For more information on the arguments, see the synchronous :meth:`CartesiaTTS.generate`.
         """
-        self._check_inputs(transcript, duration, chunk_time)
+        self._check_inputs(transcript, duration, chunk_time, output_format, data_rtype)
+        data_rtype = AudioDataReturnType(data_rtype)
+        output_format = AudioOutputFormat(output_format)
 
         body = self._generate_request_body(
-            transcript=transcript, 
+            transcript=transcript,
             voice=voice,
             model_id=model_id,
-            duration=duration, 
+            duration=duration,
             chunk_time=chunk_time,
             output_format=output_format,
         )
@@ -540,7 +580,9 @@ class AsyncCartesiaTTS(CartesiaTTS):
             generator = self._generate_ws(body)
         else:
             generator = self._generate_http_wrapper(body)
-
+        generator = self._postprocess_audio(
+            generator, data_rtype=data_rtype, output_format=output_format
+        )
         if stream:
             return generator
 
@@ -551,14 +593,38 @@ class AsyncCartesiaTTS(CartesiaTTS):
                 sampling_rate = chunk["sampling_rate"]
             chunks.append(chunk["audio"])
 
-        return {"audio": b"".join(chunks), "sampling_rate": sampling_rate}
+        if data_rtype == AudioDataReturnType.ARRAY:
+            cat = np.concatenate
+        else:
+            cat = b"".join
 
-    @retry_on_connection_error_async(max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger)
+        return {"audio": cat(chunks), "sampling_rate": sampling_rate}
+
+    async def _postprocess_audio(
+        self,
+        generator: AsyncGenerator[AudioOutput, None],
+        *,
+        data_rtype: AudioDataReturnType,
+        output_format: AudioOutputFormat,
+    ) -> AsyncGenerator[AudioOutput, None]:
+        """See :meth:`CartesiaTTS._postprocess_audio`."""
+        dtype = None
+        if data_rtype == AudioDataReturnType.ARRAY:
+            dtype = np.float32 if "fp32" in output_format.value else np.int16
+
+        async for chunk in generator:
+            if dtype is not None:
+                chunk["audio"] = np.frombuffer(chunk["audio"], dtype=dtype)
+            yield chunk
+
+    @retry_on_connection_error_async(
+        max_retries=MAX_RETRIES, backoff_factor=BACKOFF_FACTOR, logger=logger
+    )
     async def _generate_http_wrapper(self, body: Dict[str, Any]):
         """Need to wrap the http generator in a function for the retry decorator to work."""
         try:
-          async for chunk in self._generate_http(body):
-              yield chunk
+            async for chunk in self._generate_http(body):
+                yield chunk
         except Exception as e:
             logger.error(f"Failed to generate audio. {e}")
             raise e
@@ -611,21 +677,6 @@ class AsyncCartesiaTTS(CartesiaTTS):
             if self.websocket and not self._is_websocket_closed():
                 await self.websocket.close()
 
-    async def transcribe(self, raw_audio: Union[bytes, str]) -> str:
-        raw_audio_bytes, headers = self.prepare_audio_and_headers(raw_audio)
-        data = aiohttp.FormData()
-        data.add_field("clip", raw_audio_bytes, filename="input.wav", content_type="audio/wav")
-        session = await self._get_session()
-
-        async with session.post(
-            f"{self._http_url()}/audio/transcriptions", headers=headers, data=data
-        ) as response:
-            if not response.ok:
-                raise ValueError(f"Failed to transcribe audio. Error: {await response.text()}")
-
-            transcript = await response.json()
-            return transcript["text"]
-        
     def __del__(self):
         try:
             loop = asyncio.get_running_loop()
