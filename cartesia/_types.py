@@ -25,6 +25,7 @@ class AudioOutputFormat(Enum):
     PCM_16000 = "pcm_16000"  # 16-bit signed integer PCM, 16 kHz
     PCM_22050 = "pcm_22050"  # 16-bit signed integer PCM, 22.05 kHz
     PCM_44100 = "pcm_44100"  # 16-bit signed integer PCM, 44.1 kHz
+    MULAW_8000 = "mulaw_8000"  # 8-bit mu-law, 8 kHz
 
 
 class AudioOutput(TypedDict):
