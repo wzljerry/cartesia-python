@@ -61,14 +61,18 @@ def update_buffer(buffer: str, chunk_bytes: bytes) -> Tuple[str, List[Dict[str, 
             try:
                 chunk_json = json.loads(buffer[start_index : end_index + 1])
                 audio = base64.b64decode(chunk_json["data"])
-                outputs.append({"audio": audio, "sampling_rate": chunk_json["sampling_rate"]})
+                outputs.append(
+                    {"audio": audio, "sampling_rate": chunk_json["sampling_rate"]}
+                )
                 buffer = buffer[end_index + 1 :]
             except json.JSONDecodeError:
                 break
     return buffer, outputs
 
 
-def convert_response(response: Dict[str, any], include_context_id: bool) -> Dict[str, Any]:
+def convert_response(
+    response: Dict[str, any], include_context_id: bool
+) -> Dict[str, Any]:
     audio = base64.b64decode(response["data"])
 
     optional_kwargs = {}
@@ -112,16 +116,19 @@ class CartesiaTTS:
         ...     audio, sr = audio_chunk["audio"], audio_chunk["sampling_rate"]
     """
 
-    def __init__(self, *, api_key: str = None):
-        """Args:
-        api_key: The API key to use for authorization.
-            If not specified, the API key will be read from the environment variable
-            `CARTESIA_API_KEY`.
+    def __init__(self, *, api_key: str = None, timeout: float = DEFAULT_TIMEOUT):
+        """
+        Args:
+            api_key: The API key to use for authorization.
+                If not specified, the API key will be read from the environment variable
+                `CARTESIA_API_KEY`.
+            timeout: The timeout for the HTTP requests in seconds.
         """
         self.base_url = os.environ.get("CARTESIA_BASE_URL", DEFAULT_BASE_URL)
         self.api_key = api_key or os.environ.get("CARTESIA_API_KEY")
         self.api_version = os.environ.get("CARTESIA_API_VERSION", DEFAULT_API_VERSION)
         self.headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
+        self.timeout = timeout
         self.websocket = None
 
     def get_voices(self, skip_embeddings: bool = True) -> Dict[str, VoiceMetadata]:
@@ -159,7 +166,7 @@ class CartesiaTTS:
             f"{self._http_url()}/voices",
             headers=self.headers,
             params=params,
-            timeout=DEFAULT_TIMEOUT,
+            timeout=self.timeout,
         )
 
         if not response.is_success:
@@ -192,22 +199,28 @@ class CartesiaTTS:
                 Only one should be specified.
         """
         if sum(bool(x) for x in (voice_id, filepath, link)) != 1:
-            raise ValueError("Exactly one of `voice_id`, `filepath` or `url` should be specified.")
+            raise ValueError(
+                "Exactly one of `voice_id`, `filepath` or `url` should be specified."
+            )
 
         if voice_id:
             url = f"{self._http_url()}/voices/embedding/{voice_id}"
-            response = httpx.get(url, headers=self.headers, timeout=DEFAULT_TIMEOUT)
+            response = httpx.get(url, headers=self.headers, timeout=self.timeout)
         elif filepath:
             url = f"{self._http_url()}/voices/clone/clip"
             files = {"clip": open(filepath, "rb")}
             headers = self.headers.copy()
             # The default content type of JSON is incorrect for file uploads
             headers.pop("Content-Type")
-            response = httpx.post(url, headers=headers, files=files, timeout=DEFAULT_TIMEOUT)
+            response = httpx.post(
+                url, headers=headers, files=files, timeout=self.timeout
+            )
         elif link:
             url = f"{self._http_url()}/voices/clone/url"
             params = {"link": link}
-            response = httpx.post(url, headers=self.headers, params=params, timeout=DEFAULT_TIMEOUT)
+            response = httpx.post(
+                url, headers=self.headers, params=params, timeout=self.timeout
+            )
 
         if not response.is_success:
             raise ValueError(
@@ -246,7 +259,10 @@ class CartesiaTTS:
         # This will try the casting and raise an error.
         _ = AudioOutputFormat(output_format)
 
-        if AudioDataReturnType(data_rtype) == AudioDataReturnType.ARRAY and not _NUMPY_AVAILABLE:
+        if (
+            AudioDataReturnType(data_rtype) == AudioDataReturnType.ARRAY
+            and not _NUMPY_AVAILABLE
+        ):
             raise ImportError(
                 "The 'numpy' package is required to use the 'array' return type. "
                 "Please install 'numpy' or use 'bytes' as the return type."
@@ -411,7 +427,7 @@ class CartesiaTTS:
             stream=True,
             data=json.dumps(body),
             headers=self.headers,
-            timeout=(DEFAULT_TIMEOUT, DEFAULT_TIMEOUT),
+            timeout=(self.timeout, self.timeout),
         )
         if not response.ok:
             raise ValueError(f"Failed to generate audio. {response.text}")
@@ -507,10 +523,24 @@ class CartesiaTTS:
 
 
 class AsyncCartesiaTTS(CartesiaTTS):
-    def __init__(self, *, api_key: str = None):
+    def __init__(
+        self,
+        *,
+        api_key: str = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_num_connections: int = DEFAULT_NUM_CONNECTIONS,
+    ):
+        """
+        Args:
+            api_key: See :class:`CartesiaTTS`.
+            timeout: See :class:`CartesiaTTS`.
+            max_num_connections: The maximum number of concurrent connections to use for the client.
+                This is used to limit the number of connections that can be made to the server.
+        """
         self._session = None
         self._loop = None
-        super().__init__(api_key=api_key)
+        super().__init__(api_key=api_key, timeout=timeout)
+        self.max_num_connections = max_num_connections
 
     async def _get_session(self):
         current_loop = asyncio.get_event_loop()
@@ -518,8 +548,8 @@ class AsyncCartesiaTTS(CartesiaTTS):
             # If the loop has changed, close the session and create a new one.
             await self.close()
         if self._session is None or self._session.closed:
-            timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
-            connector = aiohttp.TCPConnector(limit=DEFAULT_NUM_CONNECTIONS)
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            connector = aiohttp.TCPConnector(limit=self.max_num_connections)
             self._session = aiohttp.ClientSession(timeout=timeout, connector=connector)
             self._loop = current_loop
         return self._session
