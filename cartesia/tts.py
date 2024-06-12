@@ -204,7 +204,7 @@ class CartesiaTTS:
             )
 
         if voice_id:
-            url = f"{self._http_url()}/voices/embedding/{voice_id}"
+            url = f"{self._http_url()}/voices/{voice_id}"
             response = httpx.get(url, headers=self.headers, timeout=self.timeout)
         elif filepath:
             url = f"{self._http_url()}/voices/clone/clip"
