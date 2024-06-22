@@ -1,9 +1,11 @@
 # Cartesia Python API Library
+
 The official Cartesia Python library which provides convenient access to the Cartesia REST and Websocket API from any Python 3.8+ application.
 
 **Note:** This API is still in alpha. Please expect breaking changes and report any issues you encounter.
 
 ## Installation
+
 ```bash
 pip install cartesia
 
@@ -11,26 +13,63 @@ pip install cartesia
 pip install -e '.[dev]'
 ```
 
-## Usage
+## Voices
+
 ```python
-from cartesia.tts import CartesiaTTS
+from cartesia import Cartesia
+import os
+
+client = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
+
+# Get all available voices
+voices = client.voices.list()
+print(voices)
+
+# Get a specific voice
+voice = client.voices.get(id="a0e99841-438c-4a64-b679-ae501e7d6091")
+print("The embedding for", voice["name"], "is", voice["embedding"])
+
+# Clone a voice using filepath
+cloned_voice_embedding = client.voices.clone(filepath="path/to/voice")
+
+# Create a new voice
+new_voice = client.voices.create(name="New Voice", description="A clone of my own voice", embedding=cloned_voice_embedding)
+```
+
+## Text-to-Speech
+
+### Server-Sent Events (SSE)
+
+```python
+from cartesia import Cartesia
 import pyaudio
 import os
 
-client = CartesiaTTS(api_key=os.environ.get("CARTESIA_API_KEY"))
-voices = client.get_voices()
-voice = client.get_voice_embedding(voice_id=voices["Ted"]["id"])
+client = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
+voice_name = "Barbershop Man"
+voice_id = "a0e99841-438c-4a64-b679-ae501e7d6091"
+voice = client.voices.get(id=voice_id)
+
 transcript = "Hello! Welcome to Cartesia"
-model_id = "genial-planet-1346" # (Optional) We'll specify a default if you don't have a specific model in mind
+
+# You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models)!
+model_id = "sonic-english"
+
+# You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events)!
+output_format = {
+    "container": "raw",
+    "encoding": "pcm_f32le",
+    "sample_rate": 44100,
+}
 
 p = pyaudio.PyAudio()
+rate = 44100
 
 stream = None
 
 # Generate and stream audio
-for output in client.generate(transcript=transcript, voice=voice, model_id=model_id, stream=True):
+for output in client.tts.sse(model_id=model_id, transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format):
     buffer = output["audio"]
-    rate = output["sampling_rate"]
 
     if not stream:
         stream = p.open(format=pyaudio.paFloat32,
@@ -47,27 +86,38 @@ p.terminate()
 ```
 
 You can also use the async client if you want to make asynchronous API calls:
+
 ```python
-from cartesia.tts import AsyncCartesiaTTS
+from cartesia import AsyncCartesia
 import asyncio
 import pyaudio
 import os
 
 async def write_stream():
-    client = AsyncCartesiaTTS(api_key=os.environ.get("CARTESIA_API_KEY"))
-    voices = client.get_voices()
-    voice = client.get_voice_embedding(voice_id=voices["Ted"]["id"])
+    client = AsyncCartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
+    voice_name = "Barbershop Man"
+    voice_id = "a0e99841-438c-4a64-b679-ae501e7d6091"
+    voice = client.voices.get(id=voice_id)
     transcript = "Hello! Welcome to Cartesia"
-    model_id = "genial-planet-1346" # (Optional) We'll specify a default if you don't have a specific model in mind
+    # You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models)!
+    model_id = "sonic-english"
+
+    # You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events)!
+    output_format = {
+        "container": "raw",
+        "encoding": "pcm_f32le",
+        "sample_rate": 44100,
+    }
 
     p = pyaudio.PyAudio()
+    rate = 44100
 
     stream = None
 
     # Generate and stream audio
-    async for output in await client.generate(transcript=transcript, voice=voice, model_id=model_id, stream=True):
+    async for output in await client.tts.sse(model_id=model_id, transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format
+    ):
         buffer = output["audio"]
-        rate = output["sampling_rate"]
 
         if not stream:
             stream = p.open(format=pyaudio.paFloat32,
@@ -85,6 +135,57 @@ async def write_stream():
 asyncio.run(write_stream())
 ```
 
+### WebSocket
+
+```python
+from cartesia import Cartesia
+import pyaudio
+import os
+
+client = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
+voice_name = "Barbershop Man"
+voice_id = "a0e99841-438c-4a64-b679-ae501e7d6091"
+voice = client.voices.get(id=voice_id)
+transcript = "Hello! Welcome to Cartesia"
+
+# You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models)!
+model_id = "sonic-english"
+
+# You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events)!
+output_format = {
+    "container": "raw",
+    "encoding": "pcm_f32le",
+    "sample_rate": 22050,
+}
+
+p = pyaudio.PyAudio()
+rate = 22050
+
+stream = None
+
+# Set up the websocket connection
+ws = client.tts.websocket()
+
+# Generate and stream audio using the websocket
+for output in ws.send(model_id=model_id, transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format):
+    buffer = output["audio"]
+
+    if not stream:
+        stream = p.open(format=pyaudio.paFloat32,
+                        channels=1,
+                        rate=rate,
+                        output=True)
+
+    # Write the audio data to the stream
+    stream.write(buffer)
+
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+ws.close() # Close the websocket connection
+```
+
 If you are using Jupyter Notebook or JupyterLab, you can use IPython.display.Audio to play the generated audio directly in the notebook.
 Additionally, in these notebook examples we show how to use the client as a context manager (though this is not required).
 
@@ -94,18 +195,25 @@ import io
 import os
 import numpy as np
 
-from cartesia.tts import CartesiaTTS
+from cartesia import Cartesia
 
-with CartesiaTTS(api_key=os.environ.get("CARTESIA_API_KEY")) as client:
-    voices = client.get_voices()
-    voice = client.get_voice_embedding(voice_id=voices["Ted"]["id"])
-    transcript = "Hello! Welcome to Cartesia"
+with Cartesia(api_key=os.environ.get("CARTESIA_API_KEY")) as client:
+    output_format = {
+        "container": "raw",
+        "encoding": "pcm_f32le",
+        "sample_rate": 8000,
+    }
+    rate = 8000
+    voice_id = "a0e99841-438c-4a64-b679-ae501e7d6091"
+    voice = client.voices.get(id=voice_id)
+    transcript = "Hey there! Welcome to Cartesia"
 
     # Create a BytesIO object to store the audio data
     audio_data = io.BytesIO()
 
     # Generate and stream audio
-    for output in client.generate(transcript=transcript, voice=voice, stream=True):
+    for output in client.tts.sse(model_id="sonic-english", transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format
+    ):
         buffer = output["audio"]
         audio_data.write(buffer)
 
@@ -113,31 +221,38 @@ with CartesiaTTS(api_key=os.environ.get("CARTESIA_API_KEY")) as client:
 audio_data.seek(0)
 
 # Create an Audio object from the BytesIO data
-audio = Audio(np.frombuffer(audio_data.read(), dtype=np.float32), rate=output["sampling_rate"])
+audio = Audio(np.frombuffer(audio_data.read(), dtype=np.float32), rate=rate)
 
 # Display the Audio object
 display(audio)
 ```
 
 Below is the same example using the async client:
+
 ```python
 from IPython.display import Audio
 import io
 import os
 import numpy as np
 
-from cartesia.tts import AsyncCartesiaTTS
+from cartesia import AsyncCartesia
 
-async with AsyncCartesiaTTS(api_key=os.environ.get("CARTESIA_API_KEY")) as client:
-    voices = client.get_voices()
-    voice = client.get_voice_embedding(voice_id=voices["Ted"]["id"])
-    transcript = "Hello! Welcome to Cartesia"
+async with AsyncCartesia(api_key=os.environ.get("CARTESIA_API_KEY")) as client:
+    output_format = {
+        "container": "raw",
+        "encoding": "pcm_f32le",
+        "sample_rate": 8000,
+    }
+    rate = 8000
+    voice_id = "248be419-c632-4f23-adf1-5324ed7dbf1d"
+    transcript = "Hey there! Welcome to Cartesia"
 
     # Create a BytesIO object to store the audio data
     audio_data = io.BytesIO()
 
     # Generate and stream audio
-    async for output in await client.generate(transcript=transcript, voice=voice, stream=True):
+    async for output in client.tts.sse(model_id="sonic-english", transcript=transcript, voice_id=voice_id, stream=True, output_format=output_format
+    ):
         buffer = output["audio"]
         audio_data.write(buffer)
 
@@ -145,12 +260,13 @@ async with AsyncCartesiaTTS(api_key=os.environ.get("CARTESIA_API_KEY")) as clien
 audio_data.seek(0)
 
 # Create an Audio object from the BytesIO data
-audio = Audio(np.frombuffer(audio_data.read(), dtype=np.float32), rate=output["sampling_rate"])
+audio = Audio(np.frombuffer(audio_data.read(), dtype=np.float32), rate=rate)
 
 # Display the Audio object
 display(audio)
 ```
 
 To avoid storing your API key in the source code, we recommend doing one of the following:
-1. Use [`python-dotenv`](https://pypi.org/project/python-dotenv/) to add `CARTESIA_API_KEY="my-api-key"` to your .env file. 
+
+1. Use [`python-dotenv`](https://pypi.org/project/python-dotenv/) to add `CARTESIA_API_KEY="my-api-key"` to your .env file.
 1. Set the `CARTESIA_API_KEY` environment variable, preferably to a secure shell init file (e.g. `~/.zshrc`, `~/.bashrc`)

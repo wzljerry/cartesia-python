@@ -1,43 +1,36 @@
-from enum import Enum
-from typing import List, Optional, TypedDict, Union
+from typing import List, TypedDict
 
-try:
-    import numpy as np
+class OutputFormatMapping:
+    _format_mapping = {
+        "fp32": {"container": "raw", "encoding": "pcm_f32le", "sample_rate": 44100},
+        "pcm": {"container": "raw", "encoding": "pcm_s16le", "sample_rate": 44100},
+        "fp32_16000": {"container": "raw", "encoding": "pcm_f32le", "sample_rate": 16000},
+        "fp32_22050": {"container": "raw", "encoding": "pcm_f32le", "sample_rate": 22050},
+        "fp32_44100": {"container": "raw", "encoding": "pcm_f32le", "sample_rate": 44100},
+        "pcm_16000": {"container": "raw", "encoding": "pcm_s16le", "sample_rate": 16000},
+        "pcm_22050": {"container": "raw", "encoding": "pcm_s16le", "sample_rate": 22050},
+        "pcm_44100": {"container": "raw", "encoding": "pcm_s16le", "sample_rate": 44100},
+        "mulaw_8000": {"container": "raw", "encoding": "pcm_mulaw", "sample_rate": 8000},
+        "alaw_8000": {"container": "raw", "encoding": "pcm_alaw", "sample_rate": 8000},
+    }
 
-    _NUMPY_AVAILABLE = True
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-
-class AudioDataReturnType(Enum):
-    BYTES = "bytes"
-    ARRAY = "array"
-
-
-class AudioOutputFormat(Enum):
-    """Supported output formats for the audio."""
-
-    FP32 = "fp32"  # float32
-    PCM = "pcm"  # 16-bit signed integer PCM
-    FP32_16000 = "fp32_16000"  # float32, 16 kHz
-    FP32_22050 = "fp32_22050"  # float32, 22.05 kHz
-    FP32_44100 = "fp32_44100"  # float32, 44.1 kHz
-    PCM_16000 = "pcm_16000"  # 16-bit signed integer PCM, 16 kHz
-    PCM_22050 = "pcm_22050"  # 16-bit signed integer PCM, 22.05 kHz
-    PCM_44100 = "pcm_44100"  # 16-bit signed integer PCM, 44.1 kHz
-    MULAW_8000 = "mulaw_8000"  # 8-bit mu-law, 8 kHz
-
-
-class AudioOutput(TypedDict):
-    audio: Union[bytes, "np.ndarray"]
-    sampling_rate: int
-
-
-Embedding = List[float]
-
-
+    @classmethod
+    def get_format(cls, format_name):
+        if format_name in cls._format_mapping:
+            return cls._format_mapping[format_name]
+        else:
+            raise ValueError(f"Unsupported format: {format_name}")
+        
 class VoiceMetadata(TypedDict):
     id: str
     name: str
     description: str
-    embedding: Optional[Embedding]
+    embedding: List[float]
+    is_public: bool
+    user_id: str
+    created_at: str
+    
+class OutputFormat(TypedDict):
+    container: str
+    encoding: str
+    sample_rate: int

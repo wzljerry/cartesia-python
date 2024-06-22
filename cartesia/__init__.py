@@ -1,3 +1,3 @@
-from cartesia.tts import AsyncCartesiaTTS, CartesiaTTS
+from cartesia.client import Cartesia, AsyncCartesia
 
-__all__ = ["CartesiaTTS", "AsyncCartesiaTTS"]
+__all__ = ["Cartesia", "AsyncCartesia"]
