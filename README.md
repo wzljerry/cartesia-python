@@ -8,7 +8,7 @@ The official Cartesia Python library which provides convenient access to the Car
 **Note:** This API is still in alpha. Please expect breaking changes and report any issues you encounter.
 
 > [!IMPORTANT]
-> The client library introduces breaking changes in v0.2.0, which was released on June 24th 2024. See the [release notes](https://github.com/cartesia-ai/cartesia-python/discussions/43) here and reach out to us on [Discord](https://discord.gg/ZVxavqHB9X) if you have any questions!
+> The client library introduces breaking changes in v1.0.0, which was released on June 24th 2024. See the [release notes](https://github.com/cartesia-ai/cartesia-python/discussions/44) here and reach out to us on [Discord](https://discord.gg/ZVxavqHB9X) if you have any questions!
 
 ## Documentation
 
