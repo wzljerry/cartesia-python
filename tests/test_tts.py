@@ -9,7 +9,7 @@ import logging
 import os
 import sys
 from cartesia import AsyncCartesia, Cartesia
-from cartesia.client import DEFAULT_MODEL_ID
+from cartesia.client import DEFAULT_MODEL_ID, MULTILINGUAL_MODEL_ID
 from cartesia._types import VoiceMetadata
 from typing import AsyncGenerator, Generator, List
 import numpy as np
@@ -306,3 +306,44 @@ async def test_async_websocket_send_context_manager():
         async for out in output_generate:
             assert out.keys() == {"audio", "context_id"}
             assert isinstance(out["audio"], bytes)
+
+@pytest.mark.parametrize("stream", [True, False])
+@pytest.mark.parametrize("language", ["en", "es", "fr", "de", "ja", "pt", "zh"])
+def test_sse_send_multilingual(resources: _Resources, stream: bool, language: str):
+    logger.info("Testing SSE send")
+    client = resources.client
+    transcript = "Hello, world! I'\''m generating audio on Cartesia."
+
+    output_generate = client.tts.sse(transcript=transcript, voice_id=SAMPLE_VOICE_ID, output_format={
+        "container": "raw",
+        "encoding": "pcm_f32le",
+        "sample_rate": 44100
+    }, stream=stream, model_id=MULTILINGUAL_MODEL_ID, language=language)
+    
+    if not stream:
+        output_generate = [output_generate]
+
+    for out in output_generate:
+        assert isinstance(out["audio"], bytes)
+        
+@pytest.mark.parametrize("stream", [True, False])
+@pytest.mark.parametrize("language", ["en", "es", "fr", "de", "ja", "pt", "zh"])
+def test_websocket_send_multilingual(resources: _Resources, stream: bool, language: str):
+    logger.info("Testing WebSocket send")
+    client = resources.client
+    transcript = "Hello, world! I'\''m generating audio on Cartesia."
+
+    ws = client.tts.websocket()
+    output_generate = ws.send(transcript=transcript, voice_id=SAMPLE_VOICE_ID, output_format={
+        "container": "raw",
+        "encoding": "pcm_f32le",
+        "sample_rate": 44100
+    }, stream=stream, model_id=MULTILINGUAL_MODEL_ID, language=language)
+    
+    if not stream:
+        output_generate = [output_generate]
+
+    for out in output_generate:
+        assert isinstance(out["audio"], bytes)
+    
+    ws.close()

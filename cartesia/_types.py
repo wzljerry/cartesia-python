@@ -29,6 +29,7 @@ class VoiceMetadata(TypedDict):
     is_public: bool
     user_id: str
     created_at: str
+    language: str
     
 class OutputFormat(TypedDict):
     container: str

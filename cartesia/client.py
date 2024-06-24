@@ -20,7 +20,8 @@ from cartesia._types import (
 )
 
 
-DEFAULT_MODEL_ID = "upbeat-moon"  # latest model
+DEFAULT_MODEL_ID = "sonic-english"  # latest default model
+MULTILINGUAL_MODEL_ID = "sonic-multilingual"  # latest multilingual model
 DEFAULT_BASE_URL = "api.cartesia.ai"
 DEFAULT_CARTESIA_VERSION = "2024-06-10"  # latest version
 DEFAULT_TIMEOUT = 30  # seconds
@@ -182,8 +183,8 @@ class Voices(Resource):
         """Clone a voice from a clip or a URL.
 
         Args:
-            filepath: The path to the clip file. (optional)
-            link: The URL to the clip (optional)
+            filepath: The path to the clip file.
+            link: The URL to the clip
 
         Returns:
             The embedding of the cloned voice as a list of floats.
@@ -297,8 +298,8 @@ class _WebSocket:
         """Validate and construct the voice dictionary for the request.
 
         Args:
-            voice_id: The ID of the voice to use for generating audio. (Optional)
-            voice_embedding: The embedding of the voice to use for generating audio. (Optional)
+            voice_id: The ID of the voice to use for generating audio.
+            voice_embedding: The embedding of the voice to use for generating audio.
 
         Returns:
             A dictionary representing the voice configuration.
@@ -326,6 +327,7 @@ class _WebSocket:
         voice_embedding: Optional[List[float]] = None,
         context_id: Optional[str] = None,
         duration: Optional[int] = None,
+        language: Optional[str] = None,
         stream: bool = True,
     ) -> Union[bytes, Generator[bytes, None, None]]:
         """Send a request to the WebSocket to generate audio.
@@ -334,10 +336,11 @@ class _WebSocket:
             model_id: The ID of the model to use for generating audio.
             transcript: The text to convert to speech.
             output_format: A dictionary containing the details of the output format.
-            voice_id: The ID of the voice to use for generating audio. (Optional)
-            voice_embedding: The embedding of the voice to use for generating audio. (Optional)
-            context_id: The context ID to use for the request. If not specified, a random context ID will be generated. (Optional)
-            duration: The duration of the audio in seconds. (Optional)
+            voice_id: The ID of the voice to use for generating audio.
+            voice_embedding: The embedding of the voice to use for generating audio.
+            context_id: The context ID to use for the request. If not specified, a random context ID will be generated.
+            duration: The duration of the audio in seconds.
+            language: The language code for the audio request. This can only be used with `model_id = sonic-multilingual`
             stream: Whether to stream the audio or not. (Default is True)
 
         Returns:
@@ -361,6 +364,7 @@ class _WebSocket:
                 "sample_rate": output_format["sample_rate"],
             },
             "context_id": context_id,
+            "language": language,
         }
 
         if duration is not None:
@@ -442,8 +446,8 @@ class _SSE:
         """Validate and construct the voice dictionary for the request.
 
         Args:
-            voice_id: The ID of the voice to use for generating audio. (Optional)
-            voice_embedding: The embedding of the voice to use for generating audio. (Optional)
+            voice_id: The ID of the voice to use for generating audio.
+            voice_embedding: The embedding of the voice to use for generating audio.
 
         Returns:
             A dictionary representing the voice configuration.
@@ -470,6 +474,7 @@ class _SSE:
         voice_id: Optional[str] = None,
         voice_embedding: Optional[List[float]] = None,
         duration: Optional[int] = None,
+        language: Optional[str] = None,
         stream: bool = True,
     ) -> Union[bytes, Generator[bytes, None, None]]:
         """Send a request to the server to generate audio using Server-Sent Events.
@@ -477,10 +482,11 @@ class _SSE:
         Args:
             model_id: The ID of the model to use for generating audio.
             transcript: The text to convert to speech.
-            voice_id: The ID of the voice to use for generating audio. (Optional)
-            voice_embedding: The embedding of the voice to use for generating audio. (Optional)
+            voice_id: The ID of the voice to use for generating audio.
+            voice_embedding: The embedding of the voice to use for generating audio.
             output_format: A dictionary containing the details of the output format.
-            duration: The duration of the audio in seconds. (Optional)
+            duration: The duration of the audio in seconds.
+            language: The language code for the audio request. This can only be used with `model_id = sonic-multilingual`
             stream: Whether to stream the audio or not.
 
         Returns:
@@ -498,6 +504,7 @@ class _SSE:
                 "encoding": output_format["encoding"],
                 "sample_rate": output_format["sample_rate"],
             },
+            "language": language,
         }
 
         if duration is not None:
@@ -691,6 +698,7 @@ class _AsyncSSE(_SSE):
         voice_id: Optional[str] = None,
         voice_embedding: Optional[List[float]] = None,
         duration: Optional[int] = None,
+        language: Optional[str] = None,
         stream: bool = True,
     ) -> Union[bytes, AsyncGenerator[bytes, None]]:
         voice = self._validate_and_construct_voice(voice_id, voice_embedding)
@@ -704,6 +712,7 @@ class _AsyncSSE(_SSE):
                 "encoding": output_format["encoding"],
                 "sample_rate": output_format["sample_rate"],
             },
+            "language": language,
         }
 
         if duration is not None:
@@ -794,6 +803,7 @@ class _AsyncWebSocket(_WebSocket):
         voice_embedding: Optional[List[float]] = None,
         context_id: Optional[str] = None,
         duration: Optional[int] = None,
+        language: Optional[str] = None,
         stream: Optional[bool] = True,
     ) -> Union[bytes, AsyncGenerator[bytes, None]]:
         await self.connect()
@@ -813,6 +823,7 @@ class _AsyncWebSocket(_WebSocket):
                 "sample_rate": output_format["sample_rate"],
             },
             "context_id": context_id,
+            "language": language,
         }
 
         if duration is not None:

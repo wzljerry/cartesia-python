@@ -1,8 +1,18 @@
 # Cartesia Python API Library
 
+![PyPI - Version](https://img.shields.io/pypi/v/cartesia)
+[![Discord](https://badgen.net/badge/black/Cartesia/icon?icon=discord&label)](https://discord.gg/ZVxavqHB9X)
+
 The official Cartesia Python library which provides convenient access to the Cartesia REST and Websocket API from any Python 3.8+ application.
 
 **Note:** This API is still in alpha. Please expect breaking changes and report any issues you encounter.
+
+> [!IMPORTANT]
+> The client library introduces breaking changes in v0.2.0, which was released on June 24th 2024. See the [release notes](https://github.com/cartesia-ai/cartesia-python/discussions/43) here and reach out to us on [Discord](https://discord.gg/ZVxavqHB9X) if you have any questions!
+
+## Documentation
+
+Our complete API documentation can be found [on docs.cartesia.ai](https://docs.cartesia.ai).
 
 ## Installation
 
@@ -52,10 +62,10 @@ voice = client.voices.get(id=voice_id)
 
 transcript = "Hello! Welcome to Cartesia"
 
-# You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models)!
+# You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models).
 model_id = "sonic-english"
 
-# You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events)!
+# You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events).
 output_format = {
     "container": "raw",
     "encoding": "pcm_f32le",
@@ -85,7 +95,7 @@ stream.close()
 p.terminate()
 ```
 
-You can also use the async client if you want to make asynchronous API calls:
+You can also use the async client if you want to make asynchronous API calls. Simply import `AsyncCartesia` instead of `Cartesia` and use await with each API call:
 
 ```python
 from cartesia import AsyncCartesia
@@ -99,10 +109,10 @@ async def write_stream():
     voice_id = "a0e99841-438c-4a64-b679-ae501e7d6091"
     voice = client.voices.get(id=voice_id)
     transcript = "Hello! Welcome to Cartesia"
-    # You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models)!
+    # You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models).
     model_id = "sonic-english"
 
-    # You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events)!
+    # You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events).
     output_format = {
         "container": "raw",
         "encoding": "pcm_f32le",
@@ -148,10 +158,10 @@ voice_id = "a0e99841-438c-4a64-b679-ae501e7d6091"
 voice = client.voices.get(id=voice_id)
 transcript = "Hello! Welcome to Cartesia"
 
-# You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models)!
+# You can check out our models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models).
 model_id = "sonic-english"
 
-# You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events)!
+# You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events).
 output_format = {
     "container": "raw",
     "encoding": "pcm_f32le",
@@ -184,6 +194,55 @@ stream.close()
 p.terminate()
 
 ws.close() # Close the websocket connection
+```
+
+### Multilingual Text-to-Speech [Alpha]
+
+You can use our `sonic-multilingual` model to generate audio in multiple languages. The languages supported are available at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models).
+
+```python
+from cartesia import Cartesia
+import pyaudio
+import os
+
+client = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
+voice_name = "Barbershop Man"
+voice_id = "a0e99841-438c-4a64-b679-ae501e7d6091"
+voice = client.voices.get(id=voice_id)
+
+transcript = "Hola! Bienvenido a Cartesia"
+language = "es"  # Language code corresponding to the language of the transcript
+
+# Make sure you use the multilingual model! You can check out all models at [docs.cartesia.ai](https://docs.cartesia.ai/getting-started/available-models).
+model_id = "sonic-multilingual"
+
+# You can find the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events).
+output_format = {
+    "container": "raw",
+    "encoding": "pcm_f32le",
+    "sample_rate": 44100,
+}
+
+p = pyaudio.PyAudio()
+rate = 44100
+
+stream = None
+
+# Pass in the corresponding language code to the `language` parameter to generate and stream audio.
+for output in client.tts.sse(model_id=model_id, transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format, language=language):
+    buffer = output["audio"]
+
+    if not stream:
+        stream = p.open(format=pyaudio.paFloat32,
+                        channels=1,
+                        rate=rate,
+                        output=True)
+
+    stream.write(buffer)
+
+stream.stop_stream()
+stream.close()
+p.terminate()
 ```
 
 If you are using Jupyter Notebook or JupyterLab, you can use IPython.display.Audio to play the generated audio directly in the notebook.
