@@ -358,29 +358,22 @@ display(audio)
 
 #### Output Formats
 
-You can use the `client.tts.get_output_format` method to pass in a string to get the corresponding `output_format` dictionary. You can view the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events).
+You can use the `client.tts.get_output_format` method to convert string-based output format names into the `output_format` dictionary which is expected by the `output_format` parameter. You can see the `OutputFormatMapping` class in `cartesia._types` for the currently supported output format names. You can also view the currently supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events).
 
-The strings you can pass in are:
-
-- `raw_pcm_f32le_44100`
-- `raw_pcm_f32le_24000`
-- `raw_pcm_f32le_22050`
-- `raw_pcm_f32le_16000`
-- `raw_pcm_s32le_8000`
-- `raw_pcm_s16le_44100`
-- `raw_pcm_s16le_24000`
-- `raw_pcm_s16le_22050`
-- `raw_pcm_s16le_16000`
-- `raw_pcm_s16le_8000`
-- `raw_pcm_mulaw_8000`
-- `raw_pcm_alaw_8000`
+The previously used `output_format` strings are now deprecated and will be removed in v1.2.0. These are listed in the `DeprecatedOutputFormatMapping` class in `cartesia._types`.
 
 ```python
-# Get the output format dictionary from string
+# Get the output format dictionary from string name
 output_format = client.tts.get_output_format("raw_pcm_f32le_44100")
 
-# Generate audio in raw PCM format with 32-bit floating-point little-endian encoding and a sample rate of 44100 Hz
-generator = client.tts.sse(model_id=model, transcript=transcript, voice_id=SAMPLE_VOICE_ID, stream=True, output_format=output_format)
+# Pass in the output format dictionary to generate and stream audio
+generator = client.tts.sse(
+    model_id=model,
+    transcript=transcript,
+    voice_id=SAMPLE_VOICE_ID,
+    stream=True,
+    output_format=output_format,
+)
 ```
 
 To avoid storing your API key in the source code, we recommend doing one of the following:

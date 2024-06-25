@@ -17,6 +17,7 @@ from cartesia.utils.deprecated import deprecated
 from cartesia._types import (
     OutputFormat,
     OutputFormatMapping,
+    DeprecatedOutputFormatMapping,
     VoiceMetadata,
 )
 
@@ -584,7 +585,15 @@ class TTS(Resource):
         Raises:
             ValueError: If the output_format name is not supported
         """
-        output_format_obj = OutputFormatMapping.get_format(output_format_name)
+        if output_format_name in OutputFormatMapping._format_mapping:
+            output_format_obj = OutputFormatMapping.get_format(output_format_name)
+        elif output_format_name in DeprecatedOutputFormatMapping._format_mapping:
+            output_format_obj = DeprecatedOutputFormatMapping.get_format_deprecated(
+                output_format_name
+            )
+        else:
+            raise ValueError(f"Unsupported format: {output_format_name}")
+
         return OutputFormat(
             container=output_format_obj["container"],
             encoding=output_format_obj["encoding"],
@@ -603,7 +612,15 @@ class TTS(Resource):
         Raises:
             ValueError: If the output_format name is not supported
         """
-        output_format_obj = OutputFormatMapping.get_format(output_format_name)
+        if output_format_name in OutputFormatMapping._format_mapping:
+            output_format_obj = OutputFormatMapping.get_format(output_format_name)
+        elif output_format_name in DeprecatedOutputFormatMapping._format_mapping:
+            output_format_obj = DeprecatedOutputFormatMapping.get_format_deprecated(
+                output_format_name
+            )
+        else:
+            raise ValueError(f"Unsupported format: {output_format_name}")
+
         return output_format_obj["sample_rate"]
 
 
