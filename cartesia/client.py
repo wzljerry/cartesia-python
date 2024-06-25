@@ -12,7 +12,8 @@ import logging
 import requests
 from websockets.sync.client import connect
 
-from cartesia.utils import retry_on_connection_error, retry_on_connection_error_async
+from cartesia.utils.retry import retry_on_connection_error, retry_on_connection_error_async
+from cartesia.utils.deprecated import deprecated
 from cartesia._types import (
     OutputFormat,
     OutputFormatMapping,
@@ -131,14 +132,7 @@ class Voices(Resource):
         """List all voices in your voice library.
 
         Returns:
-        This method returns a list of VoiceMetadata objects with the following keys:
-        - id: The ID of the voice.
-        - name: The name of the voice.
-        - description: The description of the voice.
-        - embedding: The embedding of the voice.
-        - is_public: Whether the voice is public.
-        - user_id: The ID of the user who created the voice.
-        - created_at: The timestamp (str) when the voice was created.
+        This method returns a list of VoiceMetadata objects.
         """
         response = httpx.get(
             f"{self._http_url()}/voices",
@@ -159,14 +153,7 @@ class Voices(Resource):
             id: The ID of the voice.
 
         Returns:
-            A dictionary containing the voice metadata with the following keys:
-            - id: The ID of the voice.
-            - name: The name of the voice.
-            - description: The description of the voice.
-            - embedding: The embedding of the voice as a list of floats.
-            - is_public: Whether the voice is public.
-            - user_id: The ID of the user who created the voice.
-            - created_at: The timestamp when the voice was created.
+            A VoiceMetadata object containing the voice metadata.
         """
         url = f"{self._http_url()}/voices/{id}"
         response = httpx.get(url, headers=self.headers, timeout=self.timeout)
@@ -344,8 +331,11 @@ class _WebSocket:
             stream: Whether to stream the audio or not. (Default is True)
 
         Returns:
-            If `stream` is True, the method returns a generator that yields chunks of audio as bytes.
-            If `stream` is False, the method returns a dictionary containing the concatenated audio as bytes and the context ID.
+            If `stream` is True, the method returns a generator that yields chunks. Each chunk is a dictionary.
+            If `stream` is False, the method returns a dictionary.
+            Both the generator and the dictionary contain the following key(s):
+            - audio: The audio as bytes.
+            - context_id: The context ID for the request.
         """
         self.connect()
 
@@ -490,8 +480,10 @@ class _SSE:
             stream: Whether to stream the audio or not.
 
         Returns:
-            If `stream` is True, the method returns a generator that yields chunks. Each chunk is a dictionary containing the audio as bytes.
-            If `stream` is False, the method returns a dictionary containing the audio as bytes.
+            If `stream` is True, the method returns a generator that yields chunks. Each chunk is a dictionary.
+            If `stream` is False, the method returns a dictionary.
+            Both the generator and the dictionary contain the following key(s):
+            - audio: The audio as bytes.
         """
         voice = self._validate_and_construct_voice(voice_id, voice_embedding)
 
@@ -581,13 +573,16 @@ class TTS(Resource):
         return ws
 
     def get_output_format(self, output_format_name: str) -> OutputFormat:
-        """Convenience method to get the output_format object from a given output format name.
+        """Convenience method to get the output_format dictionary from a given output format name.
 
         Args:
             output_format_name (str): The name of the output format.
 
         Returns:
             OutputFormat: A dictionary containing the details of the output format to be passed into tts.sse() or tts.websocket().send()
+
+        Raises:
+            ValueError: If the output_format name is not supported
         """
         output_format_obj = OutputFormatMapping.get_format(output_format_name)
         return OutputFormat(
@@ -604,6 +599,9 @@ class TTS(Resource):
 
         Returns:
             int: The sample rate for the output format.
+
+        Raises:
+            ValueError: If the output_format name is not supported
         """
         output_format_obj = OutputFormatMapping.get_format(output_format_name)
         return output_format_obj["sample_rate"]

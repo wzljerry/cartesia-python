@@ -5,10 +5,8 @@
 
 The official Cartesia Python library which provides convenient access to the Cartesia REST and Websocket API from any Python 3.8+ application.
 
-**Note:** This API is still in alpha. Please expect breaking changes and report any issues you encounter.
-
 > [!IMPORTANT]
-> The client library introduces breaking changes in v1.0.0, which was released on June 24th 2024. See the [release notes](https://github.com/cartesia-ai/cartesia-python/discussions/44) here and reach out to us on [Discord](https://discord.gg/ZVxavqHB9X) if you have any questions!
+> The client library introduces breaking changes in v1.0.0, which was released on June 24th 2024. See the [release notes](https://github.com/cartesia-ai/cartesia-python/releases/tag/v1.0.0) and [migration guide](https://github.com/cartesia-ai/cartesia-python/discussions/44). Reach out to us on [Discord](https://discord.gg/ZVxavqHB9X) for any support requests!
 
 ## Documentation
 
@@ -43,7 +41,11 @@ print("The embedding for", voice["name"], "is", voice["embedding"])
 cloned_voice_embedding = client.voices.clone(filepath="path/to/voice")
 
 # Create a new voice
-new_voice = client.voices.create(name="New Voice", description="A clone of my own voice", embedding=cloned_voice_embedding)
+new_voice = client.voices.create(
+    name="New Voice",
+    description="A clone of my own voice",
+    embedding=cloned_voice_embedding,
+)
 ```
 
 ## Text-to-Speech
@@ -78,14 +80,17 @@ rate = 44100
 stream = None
 
 # Generate and stream audio
-for output in client.tts.sse(model_id=model_id, transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format):
+for output in client.tts.sse(
+    model_id=model_id,
+    transcript=transcript,
+    voice_embedding=voice["embedding"],
+    stream=True,
+    output_format=output_format,
+):
     buffer = output["audio"]
 
     if not stream:
-        stream = p.open(format=pyaudio.paFloat32,
-                        channels=1,
-                        rate=rate,
-                        output=True)
+        stream = p.open(format=pyaudio.paFloat32, channels=1, rate=rate, output=True)
 
     # Write the audio data to the stream
     stream.write(buffer)
@@ -102,6 +107,7 @@ from cartesia import AsyncCartesia
 import asyncio
 import pyaudio
 import os
+
 
 async def write_stream():
     client = AsyncCartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
@@ -125,15 +131,19 @@ async def write_stream():
     stream = None
 
     # Generate and stream audio
-    async for output in await client.tts.sse(model_id=model_id, transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format
+    async for output in await client.tts.sse(
+        model_id=model_id,
+        transcript=transcript,
+        voice_embedding=voice["embedding"],
+        stream=True,
+        output_format=output_format,
     ):
         buffer = output["audio"]
 
         if not stream:
-            stream = p.open(format=pyaudio.paFloat32,
-                            channels=1,
-                            rate=rate,
-                            output=True)
+            stream = p.open(
+                format=pyaudio.paFloat32, channels=1, rate=rate, output=True
+            )
 
         # Write the audio data to the stream
         stream.write(buffer)
@@ -141,6 +151,8 @@ async def write_stream():
     stream.stop_stream()
     stream.close()
     p.terminate()
+    await client.close()
+
 
 asyncio.run(write_stream())
 ```
@@ -177,14 +189,17 @@ stream = None
 ws = client.tts.websocket()
 
 # Generate and stream audio using the websocket
-for output in ws.send(model_id=model_id, transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format):
+for output in ws.send(
+    model_id=model_id,
+    transcript=transcript,
+    voice_embedding=voice["embedding"],
+    stream=True,
+    output_format=output_format,
+):
     buffer = output["audio"]
 
     if not stream:
-        stream = p.open(format=pyaudio.paFloat32,
-                        channels=1,
-                        rate=rate,
-                        output=True)
+        stream = p.open(format=pyaudio.paFloat32, channels=1, rate=rate, output=True)
 
     # Write the audio data to the stream
     stream.write(buffer)
@@ -193,7 +208,7 @@ stream.stop_stream()
 stream.close()
 p.terminate()
 
-ws.close() # Close the websocket connection
+ws.close()  # Close the websocket connection
 ```
 
 ### Multilingual Text-to-Speech [Alpha]
@@ -229,14 +244,18 @@ rate = 44100
 stream = None
 
 # Pass in the corresponding language code to the `language` parameter to generate and stream audio.
-for output in client.tts.sse(model_id=model_id, transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format, language=language):
+for output in client.tts.sse(
+    model_id=model_id,
+    transcript=transcript,
+    voice_embedding=voice["embedding"],
+    stream=True,
+    output_format=output_format,
+    language=language,
+):
     buffer = output["audio"]
 
     if not stream:
-        stream = p.open(format=pyaudio.paFloat32,
-                        channels=1,
-                        rate=rate,
-                        output=True)
+        stream = p.open(format=pyaudio.paFloat32, channels=1, rate=rate, output=True)
 
     stream.write(buffer)
 
@@ -271,7 +290,12 @@ with Cartesia(api_key=os.environ.get("CARTESIA_API_KEY")) as client:
     audio_data = io.BytesIO()
 
     # Generate and stream audio
-    for output in client.tts.sse(model_id="sonic-english", transcript=transcript, voice_embedding=voice["embedding"], stream=True, output_format=output_format
+    for output in client.tts.sse(
+        model_id="sonic-english",
+        transcript=transcript,
+        voice_embedding=voice["embedding"],
+        stream=True,
+        output_format=output_format,
     ):
         buffer = output["audio"]
         audio_data.write(buffer)
@@ -310,7 +334,12 @@ async with AsyncCartesia(api_key=os.environ.get("CARTESIA_API_KEY")) as client:
     audio_data = io.BytesIO()
 
     # Generate and stream audio
-    async for output in client.tts.sse(model_id="sonic-english", transcript=transcript, voice_id=voice_id, stream=True, output_format=output_format
+    async for output in client.tts.sse(
+        model_id="sonic-english",
+        transcript=transcript,
+        voice_id=voice_id,
+        stream=True,
+        output_format=output_format,
     ):
         buffer = output["audio"]
         audio_data.write(buffer)
@@ -323,6 +352,35 @@ audio = Audio(np.frombuffer(audio_data.read(), dtype=np.float32), rate=rate)
 
 # Display the Audio object
 display(audio)
+```
+
+### Utility methods
+
+#### Output Formats
+
+You can use the `client.tts.get_output_format` method to pass in a string to get the corresponding `output_format` dictionary. You can view the supported `output_format`s in our [API Reference](https://docs.cartesia.ai/api-reference/endpoints/stream-speech-server-sent-events).
+
+The strings you can pass in are:
+
+- `raw_pcm_f32le_44100`
+- `raw_pcm_f32le_24000`
+- `raw_pcm_f32le_22050`
+- `raw_pcm_f32le_16000`
+- `raw_pcm_s32le_8000`
+- `raw_pcm_s16le_44100`
+- `raw_pcm_s16le_24000`
+- `raw_pcm_s16le_22050`
+- `raw_pcm_s16le_16000`
+- `raw_pcm_s16le_8000`
+- `raw_pcm_mulaw_8000`
+- `raw_pcm_alaw_8000`
+
+```python
+# Get the output format dictionary from string
+output_format = client.tts.get_output_format("raw_pcm_f32le_44100")
+
+# Generate audio in raw PCM format with 32-bit floating-point little-endian encoding and a sample rate of 44100 Hz
+generator = client.tts.sse(model_id=model, transcript=transcript, voice_id=SAMPLE_VOICE_ID, stream=True, output_format=output_format)
 ```
 
 To avoid storing your API key in the source code, we recommend doing one of the following:
