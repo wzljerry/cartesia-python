@@ -347,3 +347,69 @@ def test_websocket_send_multilingual(resources: _Resources, stream: bool, langua
         assert isinstance(out["audio"], bytes)
     
     ws.close()
+
+def test_websocket_send_with_custom_url():
+    logger.info("Testing WebSocket send with custom URL")
+    transcript = "Hello, world! I'\''m generating audio on Cartesia."
+
+    client = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"), base_url="wss://api.cartesia.ai")
+
+    ws = client.tts.websocket()
+    output_generate = ws.send(transcript=transcript, voice_id=SAMPLE_VOICE_ID, output_format={
+        "container": "raw",
+        "encoding": "pcm_f32le",
+        "sample_rate": 44100
+    }, stream=True, model_id=DEFAULT_MODEL_ID)
+
+    for out in output_generate:
+        assert isinstance(out["audio"], bytes)
+    
+    ws.close()
+
+def test_sse_send_with_custom_url():
+    logger.info("Testing SSE send with custom URL")
+    transcript = "Hello, world! I'\''m generating audio on Cartesia."
+
+    client = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"), base_url="https://api.cartesia.ai")
+    output_generate = client.tts.sse(transcript=transcript, voice_id=SAMPLE_VOICE_ID, output_format={
+        "container": "raw",
+        "encoding": "pcm_f32le",
+        "sample_rate": 44100
+    }, stream=True, model_id=DEFAULT_MODEL_ID)
+    
+    for out in output_generate:
+        assert isinstance(out["audio"], bytes)
+    
+def test_sse_send_with_incorrect_url():
+    logger.info("Testing SSE send with custom URL")
+    transcript = "Hello, world! I'\''m generating audio on Cartesia."
+
+    client = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"), base_url="https://api.notcartesia.ai")
+    try:
+        with pytest.raises(RuntimeError):
+            client.tts.sse(transcript=transcript, voice_id=SAMPLE_VOICE_ID, output_format={
+                "container": "raw",
+                "encoding": "pcm_f32le",
+                "sample_rate": 44100
+            }, stream=False, model_id=DEFAULT_MODEL_ID)
+    except Exception as e:
+        logger.info("Unexpected error occured: ", e)
+            
+    
+def test_websocket_send_with_incorrect_url():
+    logger.info("Testing WebSocket send with custom URL")
+    transcript = "Hello, world! I'\''m generating audio on Cartesia."
+
+    client = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"), base_url="wss://api.notcartesia.ai")
+
+    try:
+        with pytest.raises(RuntimeError):
+            ws = client.tts.websocket()
+            ws.send(transcript=transcript, voice_id=SAMPLE_VOICE_ID, output_format={
+                "container": "raw",
+                "encoding": "pcm_f32le",
+                "sample_rate": 44100
+            }, stream=True, model_id=DEFAULT_MODEL_ID)
+            ws.close()
+    except Exception as e:
+        logger.info("Unexpected error occured: ", e)

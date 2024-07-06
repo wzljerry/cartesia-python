@@ -36,22 +36,28 @@ logger = logging.getLogger(__name__)
 
 
 class BaseClient:
-    def __init__(self, *, api_key: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT):
+    def __init__(self, *, api_key: Optional[str] = None, base_url: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT):
         """Constructor for the BaseClient. Used by the Cartesia and AsyncCartesia clients."""
         self.api_key = api_key or os.environ.get("CARTESIA_API_KEY")
+        self._base_url = base_url or os.environ.get("CARTESIA_BASE_URL", DEFAULT_BASE_URL)
         self.timeout = timeout
+        
+    @property
+    def base_url(self):
+        return self._base_url
 
 
 class Resource:
     def __init__(
         self,
         api_key: str,
+        base_url: str,
         timeout: float,
     ):
         """Constructor for the Resource class. Used by the Voices and TTS classes."""
         self.api_key = api_key
         self.timeout = timeout
-        self.base_url = os.environ.get("CARTESIA_BASE_URL", DEFAULT_BASE_URL)
+        self._base_url = base_url
         self.cartesia_version = DEFAULT_CARTESIA_VERSION
         self.headers = {
             "X-API-Key": self.api_key,
@@ -59,25 +65,29 @@ class Resource:
             "Content-Type": "application/json",
         }
 
+    @property
+    def base_url(self):
+        return self._base_url
+
     def _http_url(self):
         """Returns the HTTP URL for the Cartesia API.
         If the base URL is localhost, the URL will start with 'http'. Otherwise, it will start with 'https'.
         """
-        if self.base_url.startswith("http://") or self.base_url.startswith("https://"):
-            return self.base_url
+        if self._base_url.startswith("http://") or self._base_url.startswith("https://"):
+            return self._base_url
         else:
-            prefix = "http" if "localhost" in self.base_url else "https"
-            return f"{prefix}://{self.base_url}"
+            prefix = "http" if "localhost" in self._base_url else "https"
+            return f"{prefix}://{self._base_url}"
 
     def _ws_url(self):
         """Returns the WebSocket URL for the Cartesia API.
         If the base URL is localhost, the URL will start with 'ws'. Otherwise, it will start with 'wss'.
         """
-        if self.base_url.startswith("ws://") or self.base_url.startswith("wss://"):
-            return self.base_url
+        if self._base_url.startswith("ws://") or self._base_url.startswith("wss://"):
+            return self._base_url
         else:
-            prefix = "ws" if "localhost" in self.base_url else "wss"
-            return f"{prefix}://{self.base_url}"
+            prefix = "ws" if "localhost" in self._base_url else "wss"
+            return f"{prefix}://{self._base_url}"
 
 
 class Cartesia(BaseClient):
@@ -90,18 +100,21 @@ class Cartesia(BaseClient):
     The client supports generating audio using both Server-Sent Events and WebSocket for lower latency.
     """
 
-    def __init__(self, *, api_key: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT):
+    def __init__(self, *, api_key: Optional[str] = None, base_url: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT):
         """Constructor for the Cartesia client.
 
         Args:
             api_key: The API key to use for authorization.
                 If not specified, the API key will be read from the environment variable
                 `CARTESIA_API_KEY`.
+            base_url: The base URL for the Cartesia API.
+                If not specified, the base URL will be read from the enviroment variable
+                `CARTESIA_BASE_URL`. Defaults to `api.cartesia.ai`.
             timeout: The timeout for the HTTP requests in seconds. Defaults to 30 seconds.
         """
-        super().__init__(api_key=api_key, timeout=timeout)
-        self.voices = Voices(api_key=self.api_key, timeout=self.timeout)
-        self.tts = TTS(api_key=self.api_key, timeout=self.timeout)
+        super().__init__(api_key=api_key, base_url=base_url, timeout=timeout)
+        self.voices = Voices(api_key=self.api_key, base_url=self._base_url, timeout=self.timeout)
+        self.tts = TTS(api_key=self.api_key, base_url=self._base_url, timeout=self.timeout)
 
     def __enter__(self):
         return self
@@ -251,12 +264,19 @@ class _WebSocket:
         self.websocket = None
 
     def connect(self):
-        """This method connects to the WebSocket if it is not already connected."""
+        """This method connects to the WebSocket if it is not already connected.
+        
+        Raises:
+            RuntimeError: If the connection to the WebSocket fails.
+        """
         if self.websocket is None or self._is_websocket_closed():
             route = "tts/websocket"
-            self.websocket = connect(
-                f"{self.ws_url}/{route}?api_key={self.api_key}&cartesia_version={self.cartesia_version}"
-            )
+            try:
+                self.websocket = connect(
+                    f"{self.ws_url}/{route}?api_key={self.api_key}&cartesia_version={self.cartesia_version}"
+                )
+            except Exception as e:
+                raise RuntimeError(f"Failed to connect to WebSocket. {e}")
 
     def _is_websocket_closed(self):
         return self.websocket.socket.fileno() == -1
@@ -523,8 +543,7 @@ class _SSE:
             for chunk in self._sse_generator(request_body):
                 yield chunk
         except Exception as e:
-            logger.error(f"Failed to generate audio. {e}")
-            raise e
+            raise RuntimeError(f"Error generating audio. {e}")
 
     def _sse_generator(self, request_body: Dict[str, Any]):
         response = requests.post(
@@ -555,9 +574,10 @@ class _SSE:
 class TTS(Resource):
     """This resource contains methods to generate audio using Cartesia's text-to-speech API."""
 
-    def __init__(self, api_key, timeout):
+    def __init__(self, api_key: str, base_url: str, timeout: float):
         super().__init__(
             api_key=api_key,
+            base_url=base_url,
             timeout=timeout,
         )
         self._sse_class = _SSE(self._http_url(), self.headers, self.timeout)
@@ -631,22 +651,24 @@ class AsyncCartesia(Cartesia):
         self,
         *,
         api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
         max_num_connections: int = DEFAULT_NUM_CONNECTIONS,
     ):
         """
         Args:
             api_key: See :class:`Cartesia`.
+            base_url: See :class:`Cartesia`.
             timeout: See :class:`Cartesia`.
             max_num_connections: The maximum number of concurrent connections to use for the client.
                 This is used to limit the number of connections that can be made to the server.
         """
         self._session = None
         self._loop = None
-        super().__init__(api_key=api_key, timeout=timeout)
+        super().__init__(api_key=api_key, base_url=base_url, timeout=timeout)
         self.max_num_connections = max_num_connections
         self.tts = AsyncTTS(
-            api_key=self.api_key, timeout=self.timeout, get_session=self._get_session
+            api_key=self.api_key, base_url=self._base_url, timeout=self.timeout, get_session=self._get_session
         )
 
     async def _get_session(self):
@@ -753,8 +775,7 @@ class _AsyncSSE(_SSE):
             async for chunk in self._sse_generator(request_body):
                 yield chunk
         except Exception as e:
-            logger.error(f"Failed to generate audio. {e}")
-            raise e
+            raise RuntimeError(f"Error generating audio. {e}")
 
     async def _sse_generator(self, request_body: Dict[str, Any]):
         session = await self._get_session()
@@ -797,9 +818,12 @@ class _AsyncWebSocket(_WebSocket):
         if self.websocket is None or self._is_websocket_closed():
             route = "tts/websocket"
             session = await self._get_session()
-            self.websocket = await session.ws_connect(
-                f"{self.ws_url}/{route}?api_key={self.api_key}&cartesia_version={self.cartesia_version}"
-            )
+            try:
+                self.websocket = await session.ws_connect(
+                    f"{self.ws_url}/{route}?api_key={self.api_key}&cartesia_version={self.cartesia_version}"
+                )
+            except Exception as e:
+                raise RuntimeError(f"Failed to connect to WebSocket. {e}")
 
     def _is_websocket_closed(self):
         return self.websocket.closed
@@ -872,13 +896,13 @@ class _AsyncWebSocket(_WebSocket):
             # Close the websocket connection if an error occurs.
             if self.websocket and not self._is_websocket_closed():
                 await self.websocket.close()
-            error_msg_end = "" if response is None else f": {await response.text()}"
+            error_msg_end = "" if response is None else f": {response}"
             raise RuntimeError(f"Failed to generate audio. {error_msg_end}") from e
 
 
 class AsyncTTS(TTS):
-    def __init__(self, api_key, timeout, get_session):
-        super().__init__(api_key, timeout)
+    def __init__(self, api_key, base_url, timeout, get_session):
+        super().__init__(api_key, base_url, timeout)
         self._get_session = get_session
         self._sse_class = _AsyncSSE(self._http_url(), self.headers, self.timeout, get_session)
         self.sse = self._sse_class.send
