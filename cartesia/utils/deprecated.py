@@ -17,6 +17,8 @@ def deprecated(
     local_vars = locals()
 
     def fn(func: TCallable) -> TCallable:
+        if isinstance(func, classmethod):
+            func = func.__func__
         msg = _get_deprecated_msg(func, reason, vdeprecated, vremove, replacement)
         warnings.warn(msg, DeprecationWarning)
         return func

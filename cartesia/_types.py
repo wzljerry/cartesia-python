@@ -45,15 +45,16 @@ class DeprecatedOutputFormatMapping:
         "mulaw_8000": {"container": "raw", "encoding": "pcm_mulaw", "sample_rate": 8000},
         "alaw_8000": {"container": "raw", "encoding": "pcm_alaw", "sample_rate": 8000},
     }
-
+    
+    @classmethod
     @deprecated(
         vdeprecated="1.0.1",
         vremove="1.2.0",
         reason="Old output format names are being deprecated in favor of names aligned with the Cartesia API. Use names from `OutputFormatMapping` instead.",
     )
-    def get_format_deprecated(self, format_name):
-        if format_name in self._format_mapping:
-            return self._format_mapping[format_name]
+    def get_format_deprecated(cls, format_name):
+        if format_name in cls._format_mapping:
+            return cls._format_mapping[format_name]
         else:
             raise ValueError(f"Unsupported format: {format_name}")
 

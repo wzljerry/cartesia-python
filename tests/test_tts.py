@@ -14,6 +14,8 @@ from cartesia._types import VoiceMetadata
 from typing import AsyncGenerator, Generator, List
 import numpy as np
 import pytest
+import uuid
+import asyncio
 
 THISDIR = os.path.dirname(__file__)
 sys.path.insert(0, os.path.dirname(THISDIR))
@@ -121,7 +123,7 @@ def test_sse_send_with_model_id(resources: _Resources, stream: bool):
         "container": "raw",
         "encoding": "pcm_f32le",
         "sample_rate": 44100
-    }, stream=stream, model_id="upbeat-moon")
+    }, stream=stream, model_id=DEFAULT_MODEL_ID)
     
     if not stream:
         output_generate = [output_generate]
@@ -136,11 +138,12 @@ def test_websocket_send(resources: _Resources, stream: bool):
     transcript = "Hello, world! I'\''m generating audio on Cartesia."
 
     ws = client.tts.websocket()
+    context_id = str(uuid.uuid4())
     output_generate = ws.send(transcript=transcript, voice_id=SAMPLE_VOICE_ID, output_format={
         "container": "raw",
         "encoding": "pcm_f32le",
         "sample_rate": 44100
-    }, stream=stream, model_id=DEFAULT_MODEL_ID)
+    }, stream=stream, model_id=DEFAULT_MODEL_ID, context_id=context_id)
     
     if not stream:
         output_generate = [output_generate]
@@ -241,12 +244,13 @@ async def test_async_websocket_send(resources: _Resources):
 
     async_client = create_async_client()
     ws = await async_client.tts.websocket()
+    context_id = str(uuid.uuid4())
     try:
         output = await ws.send(transcript=transcript, voice_id=SAMPLE_VOICE_ID, output_format={
             "container": "raw",
             "encoding": "pcm_f32le",
-            "sample_rate": 44100
-        }, stream=True, model_id=DEFAULT_MODEL_ID)
+            "sample_rate": 44100,
+        }, stream=True, model_id=DEFAULT_MODEL_ID, context_id=context_id)
         
         async for out in output:
             assert out.keys() == {"audio", "context_id"}
@@ -306,6 +310,8 @@ async def test_async_websocket_send_context_manager():
         async for out in output_generate:
             assert out.keys() == {"audio", "context_id"}
             assert isinstance(out["audio"], bytes)
+            
+        await ws.close()
 
 @pytest.mark.parametrize("stream", [True, False])
 @pytest.mark.parametrize("language", ["en", "es", "fr", "de", "ja", "pt", "zh"])
@@ -347,7 +353,322 @@ def test_websocket_send_multilingual(resources: _Resources, stream: bool, langua
         assert isinstance(out["audio"], bytes)
     
     ws.close()
+    
+@pytest.mark.asyncio
+async def test_continuation_websocket_context_send():
+    logger.info("Testing continuation WebSocket context send")
+    async_client = create_async_client()
+    ws = await async_client.tts.websocket()
+    context_id = str(uuid.uuid4())
+    try:
+        ctx = ws.context(context_id)
+        transcripts = ["Hello, world!", "I'\''m generating audio on Cartesia."]
+        for i, transcript in enumerate(transcripts):
+            await ctx.send(
+                model_id=DEFAULT_MODEL_ID,
+                transcript=transcript,
+                voice_id=SAMPLE_VOICE_ID,
+                output_format={
+                    "container": "raw",
+                    "encoding": "pcm_f32le",
+                    "sample_rate": 44100
+                },
+                continue_=True
+            )
+        
+        await ctx.no_more_inputs()
+            
+        async for out in ctx.receive():
+            assert out.keys() == {"audio", "context_id"}
+            assert isinstance(out["audio"], bytes)
+    finally:
+        await ws.close()
+        await async_client.close()
+        
+@pytest.mark.asyncio
+async def test_continuation_websocket_context_send_incorrect_transcript():
+    logger.info("Testing continuation WebSocket context send with incorrect transcript")
+    transcript = "Hello, world! I'\''m generating audio on Cartesia."
+    async_client = create_async_client()
+    ws = await async_client.tts.websocket()
+    context_id = str(uuid.uuid4())
+    try:
+        with pytest.raises(ValueError):
+            ctx = ws.context(context_id)
+            transcripts = ["Hello, world!", "", "I'\''m generating audio on Cartesia."] # second transcript is empty
+            for i, transcript in enumerate(transcripts):
+                await ctx.send(
+                    model_id=DEFAULT_MODEL_ID,
+                    transcript=transcript,
+                    voice_id=SAMPLE_VOICE_ID,
+                    output_format={
+                        "container": "raw",
+                        "encoding": "pcm_f32le",
+                        "sample_rate": 44100
+                    },
+                    continue_=True
+                )
+            
+            await ctx.no_more_inputs()
+                
+            async for _ in ctx.receive():
+                pass
+    except Exception as e:
+        logger.info("Caught unexpected exception", e)
+    finally:
+        await ws.close()
+        await async_client.close()
+        
+@pytest.mark.asyncio
+async def test_continuation_websocket_context_send_incorrect_voice_id():
+    logger.info("Testing continuation WebSocket context send with incorrect voice_id")
+    async_client = create_async_client()
+    ws = await async_client.tts.websocket()
+    context_id = str(uuid.uuid4())
+    try:
+        with pytest.raises(RuntimeError):
+            ctx = ws.context(context_id)
+            transcripts = ["Hello, world!", "I'\''m generating audio on Cartesia."]
+            for i, transcript in enumerate(transcripts):
+                await ctx.send(
+                    model_id=DEFAULT_MODEL_ID,
+                    transcript=transcript,
+                    voice_id="", # voice_id is empty
+                    output_format={
+                        "container": "raw",
+                        "encoding": "pcm_f32le",
+                        "sample_rate": 44100
+                    },
+                    continue_=True
+                )
+            
+            await ctx.no_more_inputs()
+                
+            async for _ in ctx.receive():
+                pass
+    except Exception as e:
+        logger.info("Caught unexpected exception", e)
+    finally:
+        await ws.close()
+        await async_client.close()
+        
+@pytest.mark.asyncio
+async def test_continuation_websocket_context_send_incorrect_output_format():
+    logger.info("Testing continuation WebSocket context send with incorrect output_format")
+    async_client = create_async_client()
+    ws = await async_client.tts.websocket()
+    context_id = str(uuid.uuid4())
+    try:
+        with pytest.raises(RuntimeError):
+            ctx = ws.context(context_id)
+            transcripts = ["Hello, world!", "I'\''m generating audio on Cartesia."]
+            for i, transcript in enumerate(transcripts):
+                await ctx.send(
+                    model_id=DEFAULT_MODEL_ID,
+                    transcript=transcript,
+                    voice_id=SAMPLE_VOICE_ID,
+                    output_format={
+                        "container": "raw",
+                        "encoding": "pcm_f32le",
+                        "sample_rate": 40,   
+                    }, # output_format is empty
+                    continue_=True
+                )
+            
+            await ctx.no_more_inputs()
+                
+            async for _ in ctx.receive():
+                pass
+    except Exception as e:
+        logger.info("Caught unexpected exception", e)
+    finally:
+        await ws.close()
+        await async_client.close()
+        
+@pytest.mark.asyncio
+async def test_continuation_websocket_context_send_incorrect_model_id():
+    logger.info("Testing continuation WebSocket context send with incorrect model_id")
+    async_client = create_async_client()
+    ws = await async_client.tts.websocket()
+    try:
+        with pytest.raises(RuntimeError):
+            ctx = ws.context()
+            transcripts = ["Hello, world!", "I'\''m generating audio on Cartesia."]
+            for i, transcript in enumerate(transcripts):
+                await ctx.send(
+                    model_id="", # model_id is empty
+                    transcript=transcript,
+                    voice_id=SAMPLE_VOICE_ID,
+                    output_format={
+                        "container": "raw",
+                        "encoding": "pcm_f32le",
+                        "sample_rate": 44100
+                    },
+                    continue_=True
+                )
+            async for _ in ctx.receive():
+                pass
+    except Exception as e:
+        logger.info("Caught unexpected exception", e)
+    finally:
+        await ws.close()
+        await async_client.close()
+    
+@pytest.mark.asyncio
+async def test_continuation_websocket_context_send_incorrect_context_id():
+    logger.info("Testing continuation WebSocket context send with incorrect context_id")
+    async_client = create_async_client()
+    ws = await async_client.tts.websocket()
+    try:
+        with pytest.raises(ValueError):
+            ctx = ws.context(str(uuid.uuid4())) # create context with context_id
+            transcripts = ["Hello, world!", "I'\''m generating audio on Cartesia."]
+            for i, transcript in enumerate(transcripts):
+                await ctx.send(
+                    model_id=DEFAULT_MODEL_ID,
+                    transcript=transcript,
+                    voice_id=SAMPLE_VOICE_ID,
+                    context_id="sad-monkeys-fly", # context_id is different
+                    output_format={
+                        "container": "raw",
+                        "encoding": "pcm_f32le",
+                        "sample_rate": 44100
+                    },
+                    continue_=True
+                )
+            
+            await ctx.no_more_inputs()
+                
+            async for _ in ctx.receive():
+                pass
+    except Exception as e:
+        logger.info("Caught unexpected exception", e)
+    finally:
+        await ws.close()
+        await async_client.close()
+        
+@pytest.mark.asyncio
+async def test_continuation_websocket_context_twice_on_same_context():
+    logger.info("Testing continuation WebSocket context twice on same context")
+    async_client = create_async_client()
+    ws = await async_client.tts.websocket()
+    context_id = str(uuid.uuid4())
+    try:
+        ctx = ws.context(context_id)
+        transcripts = ["Hello, world!", "I'\''m generating audio on Cartesia."]
+        # Send once on the context
+        for i, transcript in enumerate(transcripts):
+            await ctx.send(
+                model_id=DEFAULT_MODEL_ID,
+                transcript=transcript,
+                voice_id=SAMPLE_VOICE_ID,
+                output_format={
+                    "container": "raw",
+                    "encoding": "pcm_f32le",
+                    "sample_rate": 44100
+                },
+                continue_=True
+            )
+        
+        # Send again on the same context
+        for i, transcript in enumerate(transcripts):
+            await ctx.send(
+                model_id=DEFAULT_MODEL_ID,
+                transcript=transcript,
+                voice_id=SAMPLE_VOICE_ID,
+                output_format={
+                    "container": "raw",
+                    "encoding": "pcm_f32le",
+                    "sample_rate": 44100
+                },
+                continue_=True
+            )
+        
+        await ctx.no_more_inputs()
+            
+        async for out in ctx.receive():
+            assert out.keys() == {"audio", "context_id"}
+            assert isinstance(out["audio"], bytes)
+    finally:
+        await ws.close()
+        await async_client.close()
+        
+async def context_runner(ws, transcripts):
+    ctx = ws.context()
+    
+    out = []
+    
+    for i, transcript in enumerate(transcripts):
+        await ctx.send(
+            model_id=DEFAULT_MODEL_ID,
+            transcript=transcript,
+            voice_id=SAMPLE_VOICE_ID,
+            output_format={
+                "container": "raw",
+                "encoding": "pcm_f32le",
+                "sample_rate": 44100
+            },
+            continue_=True
+        )
+    
+    await ctx.no_more_inputs()
+    
+    async_gen = ctx.receive()
+    
+    async for out in async_gen:
+        assert out.keys() == {"audio", "context_id"}
+        assert out["context_id"] == ctx.context_id
+        assert isinstance(out["audio"], bytes)
+        
+@pytest.mark.asyncio
+async def test_continuation_websocket_context_three_contexts_parallel():
+    logger.info("Testing continuation WebSocket context three contexts parallel")
+    async_client = create_async_client()
+    ws = await async_client.tts.websocket()
+    try:
+        transcripts = ["Hello, world!", "I'\''m generating audio on Cartesia."]
+        tasks = [context_runner(ws, transcripts) for _ in range(3)]
+        await asyncio.gather(*tasks)
+    finally:
+        await ws.close()
+        await async_client.close()        
+    
+output_format_names = [
+    "raw_pcm_f32le_44100", "raw_pcm_s16le_44100", "raw_pcm_f32le_24000", "raw_pcm_s16le_24000",
+    "raw_pcm_f32le_22050", "raw_pcm_s16le_22050", "raw_pcm_f32le_16000", "raw_pcm_s16le_16000",
+    "raw_pcm_f32le_8000", "raw_pcm_s16le_8000", "raw_pcm_mulaw_8000", "raw_pcm_alaw_8000"
+]
 
+deprecated_output_format_names = [
+    "fp32", "pcm", "fp32_8000", "fp32_16000", "fp32_22050", "fp32_24000", "fp32_44100",
+    "pcm_8000", "pcm_16000", "pcm_22050", "pcm_24000", "pcm_44100", "mulaw_8000", "alaw_8000"
+]
+
+@pytest.mark.parametrize("output_format_name", output_format_names)
+def test_output_formats(resources: _Resources, output_format_name: str):
+    logger.info(f"Testing output format: {output_format_name}")
+    client = resources.client
+    output_format = client.tts.get_output_format(output_format_name)
+    assert isinstance(output_format, dict), "Output is not of type dict"
+    assert output_format["container"] is not None, "Output format container is None"
+    assert output_format["encoding"] is not None, "Output format encoding is None"
+    assert output_format["sample_rate"] is not None, "Output format sample rate is None"
+    
+@pytest.mark.parametrize("output_format_name", deprecated_output_format_names)
+def test_deprecated_output_formats(resources: _Resources, output_format_name: str):
+    logger.info(f"Testing deprecated output format: {output_format_name}")
+    client = resources.client
+    output_format = client.tts.get_output_format(output_format_name)
+    assert isinstance(output_format, dict), "Output is not of type dict"
+    assert output_format["container"] is not None, "Output format container is None"
+    assert output_format["encoding"] is not None, "Output format encoding is None"
+    assert output_format["sample_rate"] is not None, "Output format sample rate is None"
+
+def test_invalid_output_format(resources: _Resources):
+    logger.info("Testing invalid output format")
+    client = resources.client
+    with pytest.raises(ValueError):
+        client.tts.get_output_format("invalid_format")
 def test_websocket_send_with_custom_url():
     logger.info("Testing WebSocket send with custom URL")
     transcript = "Hello, world! I'\''m generating audio on Cartesia."
